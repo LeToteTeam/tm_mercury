@@ -1,0 +1,5 @@
+%{"connection": {:hex, :connection, "1.0.4", "a1cae72211f0eef17705aaededacac3eb30e6625b04a6117c1b2db6ace7d5976", [:mix], []},
+  "crc": {:hex, :crc, "0.5.0", "4af3e6fc874b3d8a8a350d912b14988273ef3e93147adc12cdf3d85518d6fa95", [:mix, :make, :make], []},
+  "elixir_make": {:hex, :elixir_make, "0.3.0", "285147fa943806eee82f6680b7b446b5569bcf3ee8328fa0a7c200ffc44fbaba", [:mix], []},
+  "hexate": {:hex, :hexate, "0.6.1", "1cea42e462c1daa32223127d4752e71016c3d933d492b9bb7fa4709a4a0fd50d", [:mix], []},
+  "nerves_uart": {:hex, :nerves_uart, "0.1.1", "32e6186b1a1b1d744631126df0b6c4049ddde5b04bc0303de29ab86a2edf60a2", [:mix, :make], [{:elixir_make, "~> 0.3", [hex: :elixir_make, optional: false]}]}}
