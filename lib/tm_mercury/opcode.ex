@@ -1,5 +1,5 @@
 defmodule TM.Mercury.Opcode do
-  @opcode [
+  @opcodes [
     write_flash:                0x01,
     read_flash:                 0x02,
     version:                    0x03,
@@ -60,15 +60,23 @@ defmodule TM.Mercury.Opcode do
     tx_cw_signal:               0xC3,
   ]
 
-  for {k, v} <- @opcode do
-    def unquote(k)() do
-      unquote(v)
+  defmacro __using__(_opts) do
+    quote location: :keep do
+      for {k, v} <- TM.Mercury.Opcode.opcodes do
+        k = :"opcode_#{k}"
+        Module.register_attribute __MODULE__, k, []
+        Module.put_attribute(__MODULE__, k, v)
+      end
     end
   end
 
-  for {k, v} <- @opcode do
-    def parse(unquote(v)) do
-      unquote(k)
+  def opcodes do
+    @opcodes
+  end
+
+  for {k, v} <- @opcodes do
+    def unquote(k)() do
+      unquote(v)
     end
   end
 end
