@@ -16,6 +16,9 @@ defmodule TM.Mercury.Protocol.Parameter do
 
   def set(:region_id, region) when is_atom(region) do
     region_id = apply(TM.Mercury.Protocol.Region, region, [])
+    set(:region_id, region_id)
+  end
+  def set(:region_id, region_id) do
     Message.encode(Opcode.set_region, <<region_id>>)
   end
 

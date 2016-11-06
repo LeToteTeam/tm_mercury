@@ -23,7 +23,6 @@ defmodule TM.Mercury.Utils.Enum do
           _ -> {:error, :no_key}
         end
       end
-      
     end
   end
 end

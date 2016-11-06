@@ -93,8 +93,10 @@ defmodule TM.Mercury.Connection do
 
   def handle_call({:recv, timeout}, _, %{uart: pid} = s) do
     case Nerves.UART.read(pid, timeout) do
-      {:ok, data} ->
-        {:reply, {:ok, Message.decode(data)}, s}
+      {:ok, %{status: 0} = msg} ->
+        {:reply, {:ok, Message.decode(msg)}, s}
+      {:ok, %{status: status}} ->
+        {:reply, {:error, TM.Mercury.Error.parse!(status)}, s}
       {:error, :timeout} = timeout ->
         {:reply, timeout, s}
       {:error, _} = error ->

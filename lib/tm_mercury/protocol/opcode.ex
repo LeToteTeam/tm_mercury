@@ -59,5 +59,4 @@ defmodule TM.Mercury.Protocol.Opcode do
     set_operating_freq:         0xC1,
     tx_cw_signal:               0xC3,
   ]
-
 end
