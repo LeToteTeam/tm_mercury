@@ -1,6 +1,6 @@
 defmodule TM.Mercury.Message do
-  use TM.Mercury.Opcode
-  import TM.Mercury.BinaryUtils
+  alias TM.Mercury.Protocol.Opcode
+  import TM.Mercury.Utils.Binary
 
   alias __MODULE__
 
@@ -9,7 +9,14 @@ defmodule TM.Mercury.Message do
   def encode(opcode, data \\ <<>>) do
     <<opcode, data :: binary>>
   end
-  def decode(%Message{opcode: @opcode_version} = msg) do
+
+  def decode(%Message{opcode: opcode} = msg) when is_integer(opcode) do
+    Map.put(msg, :opcode, Opcode.parse!(opcode))
+    |> IO.inspect
+    |> decode
+  end
+
+  def decode(%Message{opcode: :version} = msg) do
     <<bootloader_vsn1 :: uint8,
       bootloader_vsn2 :: uint8,
       bootloader_vsn3 :: uint8,
@@ -29,9 +36,16 @@ defmodule TM.Mercury.Message do
     Map.put(msg, :data, data)
   end
 
-  def decode(%Message{opcode: @opcode_get_power_mode} = msg) do
+  def decode(%Message{opcode: :get_power_mode} = msg) do
     <<mode :: uint8>> = msg.data
     mode
+  end
+
+  def decode(%Message{opcode: :get_region} = msg) do
+    IO.inspect msg
+    <<region :: uint8>> = msg.data
+    data = TM.Mercury.Protocol.Region.parse!(region)
+    Map.put(msg, :data, data)
   end
 
   def decode(msg), do: msg

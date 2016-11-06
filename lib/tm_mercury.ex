@@ -1,35 +1,11 @@
 defmodule TM.Mercury do
-  @timeout 5000
+  defdelegate start_link(device, opts),         to: TM.Mercury.Reader
+  defdelegate stop(reader),                     to: TM.Mercury.Reader
 
-  alias TM.Mercury.{Protocol, Opcode}
+  defdelegate get_param(reader, param),         to: TM.Mercury.Reader
+  defdelegate set_param(reader, param, value),  to: TM.Mercury.Reader
 
-  def start_link(device, opts) do
-    opts = defaults(opts)
-    Connection.start_link(Protocol, {device, opts})
-  end
-
-  def stop(conn) do
-    Connection.call(conn, :close)
-  end
-
-  def version(conn) do
-    Protocol.send(conn, Opcode.version)
-  end
-
-  def get_current_program(conn) do
-    Protocol.send(conn, Opcode.get_current_program)
-  end
-
-  def get_power_mode(conn) do
-    Protocol.send(conn, Opcode.get_power_mode)
-  end
-
-  def get_reader_optional_params(conn) do
-    Protocol.send(conn, Opcode.get_reader_optional_params)
-  end
-
-  ## Helpers
-  defp defaults(opts) do
-    Keyword.put_new(opts, :timeout, @timeout)
-  end
+  defdelegate read_sync(reader),                to: TM.Mercury.Reader
+  defdelegate read_async_start(reader),         to: TM.Mercury.Reader
+  defdelegate read_async_stop(reader),          to: TM.Mercury.Reader
 end

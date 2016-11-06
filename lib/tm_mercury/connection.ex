@@ -1,4 +1,4 @@
-defmodule TM.Mercury.Protocol do
+defmodule TM.Mercury.Connection do
   use Connection
 
   alias TM.Mercury.Message
@@ -35,9 +35,8 @@ defmodule TM.Mercury.Protocol do
     unknown:     0xFF,
   ]
 
-  def send(conn, opcode, data \\ <<>>) do
-    message = Message.encode(opcode, data)
-    with :ok <- Connection.call(conn, {:send, message}),
+  def send(conn, data) do
+    with :ok <- Connection.call(conn, {:send, data}),
          {:ok, %Message{} = msg} <- Connection.call(conn, {:recv, 5000}) do
       {:ok, msg.data}
     else

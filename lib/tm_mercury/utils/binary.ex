@@ -1,4 +1,4 @@
-defmodule TM.Mercury.BinaryUtils do
+defmodule TM.Mercury.Utils.Binary do
   @moduledoc false
 
   defmacro uint8 do

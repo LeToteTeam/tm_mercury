@@ -1,7 +1,7 @@
 defmodule TM.Mercury.Message.Framing do
   use Bitwise
-  import TM.Mercury.BinaryUtils
   alias TM.Mercury.Message
+  import TM.Mercury.Utils.Binary
 
   @behaviour Nerves.UART.Framing
 

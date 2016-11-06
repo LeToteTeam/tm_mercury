@@ -1,5 +1,5 @@
-defmodule TM.Mercury.Opcode do
-  @opcodes [
+defmodule TM.Mercury.Protocol.Opcode do
+  use TM.Mercury.Utils.Enum, [
     write_flash:                0x01,
     read_flash:                 0x02,
     version:                    0x03,
@@ -52,7 +52,7 @@ defmodule TM.Mercury.Opcode do
     set_region:                 0x97,
     set_power_mode:             0x98,
     set_user_mode:              0x99,
-    set_reader_optional_params: 0x9a,
+    set_reader_optional_params: 0x9A,
     set_protocol_param:         0x9B,
     set_user_profile:           0x9D,
     set_protocol_licensekey:    0x9E,
@@ -60,23 +60,4 @@ defmodule TM.Mercury.Opcode do
     tx_cw_signal:               0xC3,
   ]
 
-  defmacro __using__(_opts) do
-    quote location: :keep do
-      for {k, v} <- TM.Mercury.Opcode.opcodes do
-        k = :"opcode_#{k}"
-        Module.register_attribute __MODULE__, k, []
-        Module.put_attribute(__MODULE__, k, v)
-      end
-    end
-  end
-
-  def opcodes do
-    @opcodes
-  end
-
-  for {k, v} <- @opcodes do
-    def unquote(k)() do
-      unquote(v)
-    end
-  end
 end
