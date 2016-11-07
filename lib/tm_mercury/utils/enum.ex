@@ -2,6 +2,7 @@ defmodule TM.Mercury.Utils.Enum do
   defmacro __using__(list) do
     quote bind_quoted: [list: list] do
       @list list
+      @keys Keyword.keys(list)
 
       def list do
         @list
