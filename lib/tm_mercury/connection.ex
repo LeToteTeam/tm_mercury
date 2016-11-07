@@ -99,7 +99,7 @@ defmodule TM.Mercury.Connection do
         reason =
           case TM.Mercury.Error.parse(status) do
             {:ok, reason} -> reason
-            _ -> :unhandled_error
+            _ -> status
           end
         {:reply, {:error, reason}, s}
       {:error, :timeout} = timeout ->
