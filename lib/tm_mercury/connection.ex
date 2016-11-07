@@ -96,7 +96,12 @@ defmodule TM.Mercury.Connection do
       {:ok, %{status: 0} = msg} ->
         {:reply, {:ok, Message.decode(msg)}, s}
       {:ok, %{status: status}} ->
-        {:reply, {:error, TM.Mercury.Error.parse!(status)}, s}
+        reason =
+          case TM.Mercury.Error.parse(status) do
+            {:ok, reason} -> reason
+            _ -> :unhandled_error
+          end
+        {:reply, {:error, reason}, s}
       {:error, :timeout} = timeout ->
         {:reply, timeout, s}
       {:error, _} = error ->
