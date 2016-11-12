@@ -74,6 +74,8 @@ defmodule TM.Mercury.Message.Framing do
           # TODO Decide if you should raise or not
           IO.inspect "INVALID CRC"
         end
+        IO.inspect <<0xFF, len, opcode, status :: uint16, data :: binary(len),
+          crc :: binary(2)>>
         message = %{message | opcode: opcode, status: status, data: data, crc: crc}
         process_data(tail, nil, [message | messages])
       data ->
@@ -81,9 +83,9 @@ defmodule TM.Mercury.Message.Framing do
     end
   end
 
-  defp crc(_, _ \\ 0xFFFF)
-  defp crc(<<>>, crc), do: <<crc :: uint16>>
-  defp crc(<<chunk :: 8-unsigned-integer, tail :: binary>>, crc) do
+  def crc(_, _ \\ 0xFFFF)
+  def crc(<<>>, crc), do: <<crc :: uint16>>
+  def crc(<<chunk :: 8-unsigned-integer, tail :: binary>>, crc) do
 
     <<crc1 :: uint16>> = <<((crc <<< 4) ||| (chunk >>> 4)) :: uint16>>
     <<crc2 :: uint16>> = <<Enum.at(@crctable, (crc >>> 12)) :: uint16>>
