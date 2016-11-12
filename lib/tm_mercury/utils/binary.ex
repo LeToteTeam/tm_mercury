@@ -1,5 +1,6 @@
 defmodule TM.Mercury.Utils.Binary do
   @moduledoc false
+  use Bitwise
 
   defmacro uint8 do
     quote do: unsigned-8
@@ -19,5 +20,9 @@ defmodule TM.Mercury.Utils.Binary do
 
   defmacro binary(size, unit) do
     quote do: binary-size(unquote(size))-unit(unquote(unit))
+  end
+
+  def bytes_for_bits(bits) do
+    ((bits - 1) >>> 3) + 1
   end
 end

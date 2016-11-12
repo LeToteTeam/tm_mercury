@@ -3,6 +3,8 @@ defmodule TM.Mercury.Connection do
 
   alias TM.Mercury.Message
 
+  @timeout 5000
+
   @flush_bytes String.duplicate(<<0xFF>>, 64)
 
   @gen2_singulation_option [
@@ -35,11 +37,15 @@ defmodule TM.Mercury.Connection do
     unknown:     0xFF,
   ]
 
-  def send(conn, data) do
-    with :ok <- Connection.call(conn, {:send, data}),
-         {:ok, %Message{} = msg} <- Connection.call(conn, {:recv, 5000}) do
-      {:ok, msg.data}
-    else
+  def send(conn, data, timeout \\ @timeout) do
+    case Connection.call(conn, {:send, data}) do
+      :ok ->
+        case Connection.call(conn, {:recv, @timeout}) do
+          :ok -> :ok
+          {:ok, %Message{} = msg} ->
+            {:ok, msg.data}
+          {:error, error} -> {:error, error}
+        end
       {:error, error} -> {:error, error}
     end
   end
@@ -93,11 +99,13 @@ defmodule TM.Mercury.Connection do
 
   def handle_call({:recv, timeout}, _, %{uart: pid} = s) do
     case Nerves.UART.read(pid, timeout) do
+      {:ok, %{status: 0, length: 0} = msg} ->
+        {:reply, :ok, s}
       {:ok, %{status: 0} = msg} ->
         {:reply, {:ok, Message.decode(msg)}, s}
       {:ok, %{status: status}} ->
         reason =
-          case TM.Mercury.Error.parse(status) do
+          case TM.Mercury.Error.decode(status) do
             {:ok, reason} -> reason
             _ -> status
           end

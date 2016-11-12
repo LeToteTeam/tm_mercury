@@ -11,8 +11,7 @@ defmodule TM.Mercury.Message do
   end
 
   def decode(%Message{opcode: opcode} = msg) when is_integer(opcode) do
-    Map.put(msg, :opcode, Opcode.parse!(opcode))
-    |> IO.inspect
+    Map.put(msg, :opcode, Opcode.decode!(opcode))
     |> decode
   end
 
@@ -38,14 +37,47 @@ defmodule TM.Mercury.Message do
 
   def decode(%Message{opcode: :get_power_mode} = msg) do
     <<mode :: uint8>> = msg.data
-    mode
+    mode = TM.Mercury.Reader.PowerMode.decode!(mode)
+    Map.put(msg, :data, mode)
   end
 
   def decode(%Message{opcode: :get_region} = msg) do
-    IO.inspect msg
     <<region :: uint8>> = msg.data
-    data = TM.Mercury.Protocol.Region.parse!(region)
+    data = TM.Mercury.Protocol.Region.decode!(region)
     Map.put(msg, :data, data)
+  end
+
+  def decode(%Message{opcode: :get_reader_optional_params} = msg) do
+    <<_, config_param, value :: binary>> = msg.data
+    data =
+      TM.Mercury.Reader.Config.decode!(config_param)
+      |> TM.Mercury.Reader.Config.decode_data(value)
+    Map.put(msg, :data, data)
+  end
+
+  def decode(%Message{opcode: :get_tag_protocol} = msg) do
+    <<tag_protocol :: uint16 >> = msg.data
+    Map.put(msg, :data, TM.Mercury.Tag.Protocol.decode!(tag_protocol))
+  end
+
+  def decode(%Message{opcode: :get_antenna_port} = msg) do
+    <<tx :: uint8, rx :: uint8 >> = msg.data
+    Map.put(msg, :data, {tx, rx})
+  end
+
+  def decode(%Message{opcode: :read_tag_id_multiple} = msg) do
+    <<_, _, _, count :: uint32>> = msg.data
+    Map.put(msg, :data, count)
+  end
+
+  def decode(%Message{opcode: :get_tag_id_buffer} = msg) do
+    <<metadata_flags :: uint16, _, count, tail :: binary>> = msg.data
+    {_, results} =
+      Enum.reduce(1..count, {tail, []}, fn(_, {tail, result}) ->
+        {tail, res} = TM.Mercury.Tag.parse(tail, metadata_flags)
+        {tail, [res | result]}
+      end)
+    Map.put(msg, :data, results)
   end
 
   def decode(msg), do: msg

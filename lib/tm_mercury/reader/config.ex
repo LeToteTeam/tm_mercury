@@ -1,4 +1,4 @@
-defmodule TM.Mercury.Reader.Configuration do
+defmodule TM.Mercury.Reader.Config do
   use TM.Mercury.Utils.Enum, [
     #  Key tag buffer records off of antenna ID as well as EPC;
     #  i.e., keep separate records for the same EPC read on different antennas
@@ -88,11 +88,21 @@ defmodule TM.Mercury.Reader.Configuration do
     trigger_read_gpio:              0x1E,
   ]
 
-  def get(key) when key in @keys do
-    {:ok, apply(__MODULE__, key, [])}
+  alias TM.Mercury.Reader.Config.Transport
+  import TM.Mercury.Utils.Binary
+
+  def decode_data(:current_msg_transport, <<transport>>) do
+    Transport.decode!(transport)
   end
 
-  def get(_key) do
-    {:error, :invalid_key}
-  end
+  def decode_data(:enable_read_filter, data),
+    do: decode_boolean(data)
+
+  def decode_data(:read_filter_timeout, data),
+    do: decode_uint32(data)
+
+  defp decode_boolean(<<1>>), do: true
+  defp decode_boolean(<<0>>), do: false
+
+  defp decode_uint32(<<value :: uint32>>), do: value
 end

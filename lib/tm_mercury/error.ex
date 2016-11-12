@@ -130,4 +130,14 @@ defmodule TM.Mercury.Error do
       end
     %TM.Mercury.Error{message: to_string(message), status: status}
   end
+
+  def exception(error) do
+    status =
+      case Enum.find(list(), fn({k, _v}) -> k == error end) do
+        {k, _v} -> k
+        _ -> :unknown_status_code
+      end
+
+    %TM.Mercury.Error{message: error, status: status}
+  end
 end

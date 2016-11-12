@@ -14,11 +14,23 @@ defmodule TM.Mercury.Utils.Enum do
         end
       end
 
-      def parse!(value) do
-        {:ok, key} = parse(value)
+      def encode!(key) do
+        {:ok, value} = encode(key)
+        value
+      end
+      def encode(key) when key in @keys do
+        {:ok, <<apply(__MODULE__, key, [])>>}
+      end
+
+      def encode(_key) do
+        {:error, :invalid_key}
+      end
+
+      def decode!(value) do
+        {:ok, key} = decode(value)
         key
       end
-      def parse(value) do
+      def decode(value) do
         case Enum.find(@list, fn({_k, v}) -> v == value end) do
           {k, _v} -> {:ok, k}
           _ -> {:error, :no_key}
