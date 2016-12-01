@@ -35,7 +35,7 @@ defmodule TM.Mercury.ReadPlan do
     case Reader.get_tag_protocol(pid) do
       {:ok, tag_protocol} ->
         if tag_protocol != rp.tag_protocol do
-          <<protocol>> = TM.Mercury.TagProtocol.encode!(rp.tag_protocol)
+          <<protocol>> = TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol)
           :ok = Reader.set_tag_protocol(pid, protocol)
         end
       {:error, error} ->
@@ -49,6 +49,7 @@ defmodule TM.Mercury.ReadPlan do
           case rp.antennas do
             {rp_tx, rp_rx} -> {rp_tx, rp_rx}
             [ant] -> {ant, ant}
+            ant when is_integer(ant)-> {ant, ant}
           end
         if tx != rp_tx or rx != rp_rx do
           :ok = Reader.set_antenna_port(pid, {rp_tx, rp_rx})

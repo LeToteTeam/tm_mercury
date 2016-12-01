@@ -5,7 +5,7 @@ defmodule TM.Mercury.Tag do
 
   def parse(data, flags) do
     metadata_flags = TM.Mercury.Tag.MetadataFlag.list()
-    
+
     {data, []}
     |> parse_read_count((flags &&& metadata_flags[:read_count]))
     |> parse_rssi((flags &&& metadata_flags[:rssi]))

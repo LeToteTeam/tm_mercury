@@ -37,24 +37,42 @@ defmodule TM.Mercury.Connection do
     unknown:     0xFF,
   ]
 
-  def send(conn, data, timeout \\ @timeout) do
+  def send_data(conn, data, opts \\ []) do
+    opts = defaults(opts)
+    timeout = opts[:timeout]
+
     case Connection.call(conn, {:send, data}) do
       :ok ->
         case Connection.call(conn, {:recv, @timeout}) do
-          :ok -> :ok
-          {:ok, %Message{} = msg} ->
-            {:ok, msg.data}
-          {:error, error} -> {:error, error}
+          :ok ->                      :ok
+          {:ok, %Message{} = msg} ->  {:ok, msg.data}
+          {:error, error} ->          {:error, error}
         end
       {:error, error} -> {:error, error}
     end
+  end
+
+  def start_async(conn, callback \\ nil) do
+    callback = callback || self()
+    Connection.call(conn, {:start_async, callback})
+  end
+
+  def stop_async(conn) do
+    Connection.call(conn, :stop_async)
   end
 
   # Connection API
 
   def init({device, opts}) do
     timeout = opts[:timeout]
-    s = %{device: device, opts: opts, timeout: timeout, uart: nil}
+    s = %{
+      device: device,
+      opts: opts,
+      timeout: timeout,
+      uart: nil,
+      status: :sync,
+      callback: nil
+    }
     {:connect, :init, s}
   end
 
@@ -63,6 +81,7 @@ defmodule TM.Mercury.Connection do
     {:ok, pid} = Nerves.UART.start_link
     opts =
       opts
+      |> Keyword.put(:active, false)
       |> Keyword.put(:framing, {TM.Mercury.Message.Framing, []})
       |> Keyword.put(:rx_framing_timeout, 500)
     case Nerves.UART.open(pid, device, opts) do
@@ -86,6 +105,17 @@ defmodule TM.Mercury.Connection do
 
   def handle_call(_, _, %{uart: nil} = s) do
     {:reply, {:error, :closed}, s}
+
+  end
+
+  def handle_call(:stop_async, _, %{uart: pid} = s) do
+    :ok = Nerves.UART.configure pid, active: false
+    {:reply, :ok, %{s | status: :sync, callback: nil}}
+  end
+
+  def handle_call({:start_async, callback}, _, %{uart: pid} = s) do
+    :ok = Nerves.UART.configure pid, active: true
+    {:reply, :ok, %{s | status: :async, callback: callback}}
   end
 
   def handle_call({:send, data}, _, %{uart: pid} = s) do
@@ -98,27 +128,64 @@ defmodule TM.Mercury.Connection do
   end
 
   def handle_call({:recv, timeout}, _, %{uart: pid} = s) do
-    case Nerves.UART.read(pid, timeout) do
-      {:ok, %{status: 0, length: 0} = msg} ->
-        {:reply, :ok, s}
-      {:ok, %{status: 0} = msg} ->
-        {:reply, {:ok, Message.decode(msg)}, s}
-      {:ok, %{status: status}} ->
-        reason =
-          case TM.Mercury.Error.decode(status) do
-            {:ok, reason} -> reason
-            _ -> status
-          end
-        {:reply, {:error, reason}, s}
-      {:error, :timeout} = timeout ->
-        {:reply, timeout, s}
-      {:error, _} = error ->
-        {:disconnect, error, error, s}
-    end
+    recv(Nerves.UART.read(pid, timeout), s)
   end
 
   def handle_call(:close, from, s) do
     {:disconnect, {:close, from}, s}
+  end
+
+  def handle_info({:nerves_uart, _, data}, %{status: :async} = s) do
+    s =
+      case recv({:ok, data}, s) do
+        {:reply, {:error, :no_tags_found}, s} ->
+          s
+        {:reply, msg, s} ->
+          send s.callback, {:tm_mercury, :message, data}
+          s
+        {:disconnect, error, s} ->
+          send s.callback, {:tm_mercury, :error, error}
+          s
+      end
+
+    {:noreply, s}
+  end
+
+  def handle_info(data, %{status: :sync} = s) do
+    IO.puts "Handle Info: :sync"
+    IO.inspect data
+    {:noreply, s}
+  end
+
+  defp defaults(opts) do
+    opts
+    |> Keyword.put_new(:timeout, @timeout)
+    |> Keyword.put_new(:mode, :sync)
+  end
+
+  defp recv({:ok, %{status: 0, length: 0} = msg}, s) do
+    {:reply, :ok, s}
+  end
+
+  defp recv({:ok, %{status: 0} = msg}, s) do
+      {:reply, {:ok, Message.decode(msg)}, s}
+  end
+
+  defp recv({:ok, %{status: status}}, s) do
+    reason =
+      case TM.Mercury.Error.decode(status) do
+        {:ok, reason} -> reason
+        _ -> status
+      end
+    {:reply, {:error, reason}, s}
+  end
+
+  defp recv({:error, :timeout} = timeout, s) do
+    {:reply, timeout, s}
+  end
+
+  defp recv({:error, _} = error, s) do
+    {:disconnect, error, error, s}
   end
 
 end

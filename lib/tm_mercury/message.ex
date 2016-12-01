@@ -66,8 +66,19 @@ defmodule TM.Mercury.Message do
   end
 
   def decode(%Message{opcode: :read_tag_id_multiple} = msg) do
-    <<_, _, _, count :: uint32>> = msg.data
-    Map.put(msg, :data, count)
+    <<metadata_flags :: uint16, _, count, tail :: binary>> = msg.data
+    if byte_size(tail) > 0 do
+      IO.puts "Byte Size > 0"
+      IO.puts "Count: #{inspect count}"
+      {_, results} =
+        Enum.reduce(1..count, {tail, []}, fn(_, {tail, result}) ->
+          {tail, res} = TM.Mercury.Tag.parse(tail, metadata_flags)
+          {tail, [res | result]}
+        end)
+      Map.put(msg, :data, results)
+    else
+      Map.put(msg, :data, count)
+    end
   end
 
   def decode(%Message{opcode: :get_tag_id_buffer} = msg) do
@@ -78,6 +89,11 @@ defmodule TM.Mercury.Message do
         {tail, [res | result]}
       end)
     Map.put(msg, :data, results)
+  end
+
+  def decode(%{opcode: :multi_protocol_tag_op} = msg) do
+    IO.puts "Background Read Message: #{inspect msg}"
+    msg
   end
 
   def decode(msg), do: msg

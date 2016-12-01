@@ -30,7 +30,9 @@ defmodule TM.Mercury.Message.Framing do
   end
 
   def remove_framing(data, %{buffer: buffer} = state) do
-    {buffer, current_message, messages} = process_data(buffer <> data, nil, [])
+    IO.inspect data
+    current_message = Map.get(state, :current_message)
+    {buffer, current_message, messages} = process_data(buffer <> data, current_message, [])
     state = %{state | buffer: buffer, current_message: current_message}
     rc = if buffer_empty?(state), do: :ok, else: :in_frame
     {rc, messages, state}
@@ -51,17 +53,22 @@ defmodule TM.Mercury.Message.Framing do
   def buffer_empty?(%{buffer: ""}),  do: true
   def buffer_empty?(%{buffer: _}),    do: false
 
-
   defp process_data("", nil, messages) do
     {"", nil, messages}
   end
-  defp process_data(data, %{length: len} = message, messages)
-    when byte_size(data) < len do
-    {data, message, messages}
-  end
+
   defp process_data(<<0xFF, len :: uint8, tail :: binary>>, nil, messages) do
     message = %Message{length: len}
     process_data(tail, message, messages)
+  end
+  #no message yet
+  defp process_data(data, nil, messages) do
+    {data, nil, messages}
+  end
+
+  defp process_data(data, %{length: len} = message, messages)
+    when byte_size(data) < len do
+    {data, message, messages}
   end
 
   defp process_data(data, %{length: len} = message, messages) do
@@ -72,7 +79,7 @@ defmodule TM.Mercury.Message.Framing do
         calculated_crc = crc(packet)
         if crc != calculated_crc do
           # TODO Decide if you should raise or not
-          IO.inspect "INVALID CRC"
+          #IO.inspect "INVALID CRC"
         end
         IO.inspect <<0xFF, len, opcode, status :: uint16, data :: binary(len),
           crc :: binary(2)>>

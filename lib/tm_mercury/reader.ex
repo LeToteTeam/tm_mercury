@@ -23,11 +23,11 @@ defmodule TM.Mercury.Reader do
   end
 
   def get_param(pid, param) do
-    Serial.send(pid, Parameter.get(param))
+    Serial.send_data(pid, Parameter.get(param))
   end
 
   def set_param(pid, param, value) do
-    Serial.send(pid, Parameter.set(param, value))
+    Serial.send_data(pid, Parameter.set(param, value))
   end
 
   def get_config_param(pid, key) do
@@ -36,7 +36,7 @@ defmodule TM.Mercury.Reader do
         msg =
           Opcode.get_reader_optional_params()
           |> Message.encode(<<0x01, key :: binary>>)
-        Serial.send(pid, msg)
+        Serial.send_data(pid, msg)
       error ->
         error
     end
@@ -49,7 +49,7 @@ defmodule TM.Mercury.Reader do
     #     msg =
     #       Opcode.set_reader_optional_params()
     #       |> Message.encode(<<0x01, key :: binary>>)
-    #     Serial.send(pid, msg)
+    #     Serial.send_data(pid, msg)
     #   error ->
     #     error
     #
@@ -85,7 +85,7 @@ defmodule TM.Mercury.Reader do
         msg =
           Opcode.read_tag_id_multiple
           |> Message.encode(payload)
-        case Serial.send(pid, msg, timeout + 1000) do
+        case Serial.send_data(pid, msg, timeout: (timeout + 1000)) do
           {:ok, count} ->
             flags =
               TM.Mercury.Tag.MetadataFlag.all
@@ -98,53 +98,105 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  def read_async_start(pid, %ReadPlan{} = rp) do
+  def read_async_start(pid, %ReadPlan{} = rp, callback \\ nil) do
+    cb = callback || self()
+    # Validate the read plan
+    case ReadPlan.validate(rp) do
+      [errors: []] -> :ok
+        # prepare the read plan
+        :ok = ReadPlan.prepare(pid, rp)
 
+        # Configure the region
+        case get_param(pid, :region_id) do
+          {:ok, :na} -> :noop
+          {:ok, :none} ->
+            set_param(pid, :region_id, :na)
+          {:error, error} ->
+            raise TM.Mercury.Error, error
+        end
+
+        # clear the tag buffer`
+        :ok = clear_tag_id_buffer(pid)
+
+        # assemble the payload
+        payload = <<
+          0x00 :: uint16, # timout 0 for embedded read
+          0x01, # Option Byte (Continuious Read),
+          TM.Mercury.Protocol.Opcode.read_tag_id_multiple :: uint8,
+          0x00 :: uint16, #Search Flags
+          TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol) :: binary,
+          0x7, 0x22, 0x10, 0x0, 0x1b, 0x0, 0xfa, 0x1, 0xff # This makes things work ¯\_(ツ)_/¯
+        >>
+        # Start the read
+        msg =
+          Opcode.multi_protocol_tag_op
+          |> Message.encode(payload)
+        case Serial.send_data(pid, msg, timeout: 500) do
+          {:ok, _} ->
+            Serial.start_async(pid)
+          error ->
+            error
+        end
+      [errors: errors] ->
+        {:error, errors}
+    end
   end
 
   def read_async_stop(pid) do
-
+    payload = <<
+      0x00,
+      0x00,
+      0x02>>
+    msg =
+      Opcode.multi_protocol_tag_op
+      |> Message.encode(payload)
+    case Serial.send_data(pid, msg, timeout: 500) do
+      {:ok, _} ->
+        Serial.stop_async(pid)
+      error ->
+        error
+    end
   end
 
   # Extended Commands
 
   def send(pid, command) do
-    Serial.send(pid, command)
+    Serial.send_data(pid, command)
   end
 
   def version(pid) do
     msg =
       Opcode.version
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_current_program(pid) do
     msg =
       Opcode.get_current_program
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_power_mode(pid) do
     msg =
       Opcode.get_power_mode
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_tag_protocol(pid) do
     msg =
       Opcode.get_tag_protocol
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_antenna_port(pid) do
     msg =
       Opcode.get_antenna_port
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_reader_stats(pid, flags) do
@@ -154,7 +206,7 @@ defmodule TM.Mercury.Reader do
         Reader.Stats.Option.get_per_port,
         flags
       >>)
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def get_tag_id_buffer(pid, metadata_flags) do
@@ -164,14 +216,14 @@ defmodule TM.Mercury.Reader do
         metadata_flags :: uint16,
         0x00
       >>)
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def clear_tag_id_buffer(pid) do
     msg =
       Opcode.clear_tag_id_buffer
       |> Message.encode()
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def set_power_mode(pid, mode) do
@@ -182,7 +234,7 @@ defmodule TM.Mercury.Reader do
           |> Message.encode(
             mode
           )
-        Serial.send(pid, msg)
+        Serial.send_data(pid, msg)
       error -> error
     end
   end
@@ -193,7 +245,7 @@ defmodule TM.Mercury.Reader do
       |> Message.encode(<<
         protocol :: uint16
       >>)
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   def set_antenna_port(pid, {tx, rx}) do
@@ -202,7 +254,7 @@ defmodule TM.Mercury.Reader do
       |> Message.encode(<<
         tx, rx
       >>)
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
   def set_antenna_port(pid, port) do
     set_antenna_port(pid, {port, port})
@@ -215,7 +267,7 @@ defmodule TM.Mercury.Reader do
         Reader.Stats.Option.reset,
         flags
       >>)
-    Serial.send(pid, msg)
+    Serial.send_data(pid, msg)
   end
 
   ## Helpers
