@@ -1,6 +1,11 @@
 defmodule TM.Mercury do
   alias TM.Mercury.ReadPlan
 
+  # @spec start_link() ::
+  #   {:ok, pid} | {:error, term}
+  defdelegate enumerate(),
+    to: Nerves.UART
+
   @doc """
   Start a process and open a connection
   with the reader over UART connected via TTL / USB
