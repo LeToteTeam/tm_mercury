@@ -256,7 +256,21 @@ defmodule TM.Mercury.Reader do
       >>)
     Serial.send_data(pid, msg)
   end
-  def set_antenna_port(pid, port) do
+  def set_antenna_port(pid, ports) when is_list(ports) do
+    ant = Enum.reduce(ports, <<>>, fn({rx, tx}, ant) ->
+      ant <> <<rx, tx>>
+    end)
+    |> IO.inspect
+    msg =
+      Opcode.set_antenna_port
+      |> Message.encode(<<
+        2,
+        ant :: binary
+      >>)
+      |> IO.inspect
+    Serial.send_data(pid, msg)
+  end
+  def set_antenna_port(pid, port) when is_integer(port) do
     set_antenna_port(pid, {port, port})
   end
 

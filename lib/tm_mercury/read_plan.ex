@@ -43,20 +43,24 @@ defmodule TM.Mercury.ReadPlan do
     end
 
     # Next check the antenna port settings
-    case Reader.get_antenna_port(pid) do
-      {:ok, {tx, rx}} ->
-        {rp_tx, rp_rx} =
-          case rp.antennas do
-            {rp_tx, rp_rx} -> {rp_tx, rp_rx}
-            [ant] -> {ant, ant}
-            ant when is_integer(ant)-> {ant, ant}
-          end
-        if tx != rp_tx or rx != rp_rx do
-          :ok = Reader.set_antenna_port(pid, {rp_tx, rp_rx})
-        end
-      {:error, error} ->
-        raise TM.Mercury.Error, error
-    end
+    ant =
+      case rp.antennas do
+        {rp_tx, rp_rx} -> {rp_tx, rp_rx}
+        ant when is_list(ant) -> ant
+        ant when is_integer(ant)-> {ant, ant}
+      end
+    Reader.set_antenna_port(pid, ant)
+
+    # case Reader.get_antenna_port(pid) do
+    #   {:ok, {tx, rx}} ->
+    #     {rp_tx, rp_rx} =
+
+    #     if tx != rp_tx or rx != rp_rx do
+    #       :ok =
+    #     end
+    #   {:error, error} ->
+    #     raise TM.Mercury.Error, error
+    # end
 
     # Make sure the read filter is enabled
     case Reader.get_config_param(pid, :enable_read_filter) do
