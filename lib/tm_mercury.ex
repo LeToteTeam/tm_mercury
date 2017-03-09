@@ -21,29 +21,19 @@ defmodule TM.Mercury do
     to: TM.Mercury.Reader
 
   @doc """
-  Stop and close the connection to the reader
+  Disconnect the reader.  The connection will be restarted.
   """
-  @spec stop(pid) ::
+  @spec disconnect(pid) ::
     {:ok, pid} | {:error, term}
-  defdelegate stop(pid),
+  defdelegate disconnect(pid),
     to: TM.Mercury.Reader
 
-  @spec get_param(pid, key :: String.t) ::
-    {:ok, term} | {:error, term}
-  defdelegate get_param(pid, key),
-    to: TM.Mercury.Reader
-
-  @spec set_param(pid, key :: String.t, val :: any) ::
-    {:ok, term} | {:error, term}
-  defdelegate set_param(pid, key, value),
-    to: TM.Mercury.Reader
-
-  @spec get_param(pid, key :: String.t) ::
+  @spec get_config_param(pid, key :: String.t) ::
     {:ok, term} | {:error, term}
   defdelegate get_config_param(pid, key),
     to: TM.Mercury.Reader
 
-  @spec set_param(pid, key :: String.t, val :: any) ::
+  @spec set_config_param(pid, key :: String.t, val :: any) ::
     {:ok, term} | {:error, term}
   defdelegate set_config_param(pid, key, val),
     to: TM.Mercury.Reader

@@ -1,9 +1,9 @@
 defmodule TM.Mercury.Connection do
+  require Logger
+
   use Connection
 
   alias TM.Mercury.Message
-
-  @timeout 5000
 
   @flush_bytes String.duplicate(<<0xFF>>, 64)
 
@@ -37,16 +37,24 @@ defmodule TM.Mercury.Connection do
     unknown:     0xFF,
   ]
 
+  @defaults [
+    active: false,
+    timeout: 5000,
+    mode: :sync,
+    framing: {TM.Mercury.Message.Framing, []},
+    rx_framing_timeout: 500
+  ]
+
   def send_data(conn, data, opts \\ []) do
     opts = defaults(opts)
     timeout = opts[:timeout]
 
     case Connection.call(conn, {:send, data}) do
       :ok ->
-        case Connection.call(conn, {:recv, @timeout}) do
-          :ok ->                      :ok
-          {:ok, %Message{} = msg} ->  {:ok, msg.data}
-          {:error, error} ->          {:error, error}
+        case Connection.call(conn, {:recv, timeout}) do
+          :ok ->                     :ok
+          {:ok, %Message{} = msg} -> {:ok, msg.data}
+          {:error, error} ->         {:error, error}
         end
       {:error, error} -> {:error, error}
     end
@@ -61,14 +69,24 @@ defmodule TM.Mercury.Connection do
     Connection.call(conn, :stop_async)
   end
 
+  @doc """
+  Change the baud rate on the underlying UART connection.
+  Note: this might not be supported by Nerves.UART yet, but it still accepts the call.
+  """
+  def set_speed(conn, speed) do
+    Connection.call(conn, {:set_speed, speed})
+  end
+
+  def close(conn, wait_for_reopen? \\ false) do
+    Connection.call(conn, {:close, wait_for_reopen?})
+  end
+
   # Connection API
 
   def init({device, opts}) do
-    timeout = opts[:timeout]
     s = %{
       device: device,
       opts: opts,
-      timeout: timeout,
       uart: nil,
       status: :sync,
       callback: nil
@@ -76,41 +94,72 @@ defmodule TM.Mercury.Connection do
     {:connect, :init, s}
   end
 
-  def connect(_, %{uart: nil, device: device, opts: opts,
-  timeout: _timeout} = s) do
-    {:ok, pid} = Nerves.UART.start_link
-    opts =
-      opts
-      |> Keyword.put(:active, false)
-      |> Keyword.put(:framing, {TM.Mercury.Message.Framing, []})
-      |> Keyword.put(:rx_framing_timeout, 500)
-    case Nerves.UART.open(pid, device, opts) do
-      :ok -> {:ok, %{s | uart: pid}}
-      {:error, _} -> {:backoff, 1000, s}
+  def connect(info, %{uart: pid, device: device, opts: opts} = s) do
+    Logger.debug "Connecting to RFID reader at #{device}"
+
+    uart_pid = if is_nil(pid) do
+      {:ok, new_pid} = Nerves.UART.start_link
+      new_pid
+    else
+      pid
+    end
+
+    new_state = %{s | uart: uart_pid}
+
+    handle_reply = case info do
+      {:reconnect, from} ->
+        fn(msg) -> Connection.reply(from, msg) end
+      _ ->
+        fn _ -> :noop end
+    end
+
+    case Nerves.UART.open(uart_pid, device, defaults(opts)) do
+      :ok ->
+        handle_reply.(:ok)
+        {:ok, new_state}
+      {:error, _} = error->
+        handle_reply.(error)
+        {:backoff, 1000, new_state}
     end
   end
 
-  def disconnect(info, %{uart: pid} = s) do
+  def disconnect(info, %{uart: pid, device: device} = s) do
+    Logger.debug "Disconnecting from RFID reader at #{inspect device}"
+
+    _ = Nerves.UART.drain(pid)
     :ok = Nerves.UART.close(pid)
+
     case info do
-      {:close, from} ->
+      {{:close, true}, from} ->
+        # Wait until reconnected to send a reply
+        {:connect, {:reconnect, from}, s}
+      {{:close, false}, from} ->
+        # Send a reply immediately without waiting for reconnecting
         Connection.reply(from, :ok)
+        {:connect, :reconnect, s}
       {:error, :closed} ->
-        :error_logger.format("Connection closed~n", [])
+        Logger.error("RFID UART connection closed")
+        {:connect, :reconnect, s}
       {:error, reason} ->
-        :error_logger.format("Connection error: ~s~n", [reason])
+        Logger.error("RFID UART error: #{inspect reason}")
+        {:connect, :reconnect, s}
     end
-    {:connect, :reconnect, %{s | uart: nil}}
+
   end
 
   def handle_call(_, _, %{uart: nil} = s) do
     {:reply, {:error, :closed}, s}
-
   end
 
   def handle_call(:stop_async, _, %{uart: pid} = s) do
     :ok = Nerves.UART.configure pid, active: false
     {:reply, :ok, %{s | status: :sync, callback: nil}}
+  end
+
+  def handle_call({:set_speed, speed}, _, %{uart: pid, opts: opts} = s) do
+    :ok = Nerves.UART.configure pid, speed: speed
+    new_state = %{s | opts: Keyword.put(opts, :speed, speed)}
+    {:reply, :ok, new_state}
   end
 
   def handle_call({:start_async, callback}, _, %{uart: pid} = s) do
@@ -131,8 +180,8 @@ defmodule TM.Mercury.Connection do
     recv(Nerves.UART.read(pid, timeout), s)
   end
 
-  def handle_call(:close, from, s) do
-    {:disconnect, {:close, from}, s}
+  def handle_call({:close, wait}, from, s) do
+    {:disconnect, {{:close, wait}, from}, s}
   end
 
   def handle_info({:nerves_uart, _, data}, %{status: :async} = s) do
@@ -140,7 +189,7 @@ defmodule TM.Mercury.Connection do
       case recv({:ok, data}, s) do
         {:reply, {:error, :no_tags_found}, s} ->
           s
-        {:reply, msg, s} ->
+        {:reply, _msg, s} ->
           send s.callback, {:tm_mercury, :message, data}
           s
         {:disconnect, error, s} ->
@@ -158,12 +207,10 @@ defmodule TM.Mercury.Connection do
   end
 
   defp defaults(opts) do
-    opts
-    |> Keyword.put_new(:timeout, @timeout)
-    |> Keyword.put_new(:mode, :sync)
+    Keyword.merge(@defaults, opts)
   end
 
-  defp recv({:ok, %{status: 0, length: 0} = msg}, s) do
+  defp recv({:ok, %{status: 0, length: 0}}, s) do
     {:reply, :ok, s}
   end
 

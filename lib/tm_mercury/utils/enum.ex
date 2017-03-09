@@ -1,5 +1,9 @@
 defmodule TM.Mercury.Utils.Enum do
   defmacro __using__(list) do
+    generate(list)
+  end
+
+  def generate(list) do
     quote bind_quoted: [list: list] do
       @list list
       @keys Keyword.keys(list)
@@ -19,7 +23,7 @@ defmodule TM.Mercury.Utils.Enum do
         value
       end
       def encode(key) when key in @keys do
-        {:ok, <<apply(__MODULE__, key, [])>>}
+        {:ok, apply(__MODULE__, key, [])}
       end
 
       def encode(_key) do
