@@ -6,6 +6,8 @@ defmodule TM.Mercury.Reader.Stats.Flag do
   # detected noise floor with transmitter off. recomputed when requested, not resettable.
   noise_floor:        (1<<<1),
   # detected noise floor with transmitter on. recomputed when requested, not resettable.
-  noise_floor_tx_on:  (1<<<3)
+  noise_floor_tx_on:  (1<<<3),
+  # All of the above
+  all:                0xF
   ]
 end

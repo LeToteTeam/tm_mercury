@@ -35,7 +35,7 @@ defmodule TM.Mercury.ReadPlan do
     case Reader.get_tag_protocol(pid) do
       {:ok, tag_protocol} ->
         if tag_protocol != rp.tag_protocol do
-          <<protocol>> = TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol)
+          protocol = TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol)
           :ok = Reader.set_tag_protocol(pid, protocol)
         end
       {:error, error} ->

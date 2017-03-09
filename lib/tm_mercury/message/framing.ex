@@ -1,5 +1,6 @@
 defmodule TM.Mercury.Message.Framing do
   use Bitwise
+  require Logger
   alias TM.Mercury.Message
   import TM.Mercury.Utils.Binary
 
@@ -25,12 +26,12 @@ defmodule TM.Mercury.Message.Framing do
     len = byte_size(data) - 1
     packet = <<len :: uint8, data :: binary>>
     message = <<0xFF>> <> packet <> crc(packet)
-    IO.inspect message
+    Logger.debug "Outgoing: #{inspect message}"
     {:ok, message, state}
   end
 
   def remove_framing(data, %{buffer: buffer} = state) do
-    IO.inspect data
+    Logger.debug "Incoming: #{inspect data}"
     current_message = Map.get(state, :current_message)
     {buffer, current_message, messages} = process_data(buffer <> data, current_message, [])
     state = %{state | buffer: buffer, current_message: current_message}
@@ -79,10 +80,8 @@ defmodule TM.Mercury.Message.Framing do
         calculated_crc = crc(packet)
         if crc != calculated_crc do
           # TODO Decide if you should raise or not
-          #IO.inspect "INVALID CRC"
+          Logger.warn "Invalid CRC"
         end
-        IO.inspect <<0xFF, len, opcode, status :: uint16, data :: binary(len),
-          crc :: binary(2)>>
         message = %{message | opcode: opcode, status: status, data: data, crc: crc}
         process_data(tail, nil, [message | messages])
       data ->
