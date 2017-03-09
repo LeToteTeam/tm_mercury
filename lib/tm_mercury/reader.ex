@@ -9,7 +9,7 @@ defmodule TM.Mercury.Reader do
   alias TM.Mercury.Message
   alias TM.Mercury.Connection, as: Serial
   alias TM.Mercury.ReadPlan
-  alias __MODULE__
+
   # Basic Commands
 
   def start_link(device, opts) do
@@ -172,22 +172,25 @@ defmodule TM.Mercury.Reader do
   def initialize_reader(pid) do
     opts = Application.get_env(:tm_mercury, :reader)
     region = opts[:region]
+    power_mode = opts[:power_mode]
 
     :ok = set_region(pid, region)
+    :ok = set_power_mode(pid, power_mode)
   end
 
   def read_sync(pid, %ReadPlan{} = rp, timeout \\ @read_timeout) do
     # Validate the read plan
     case ReadPlan.validate(rp) do
       [errors: []] -> :ok
+        :ok = initialize_reader(pid)
+
         # prepare the read plan
         :ok = ReadPlan.prepare(pid, rp)
-
-        :ok = initialize_reader(pid)
 
         # clear the tag buffer`
         :ok = clear_tag_id_buffer(pid)
 
+        # TODO: Move this to the Command module.
         # assemble the payload
         payload = <<
           0x00, # Option Byte (autonomous_read)
@@ -199,9 +202,9 @@ defmodule TM.Mercury.Reader do
           Opcode.read_tag_id_multiple
           |> Message.encode(payload)
         case Serial.send_data(pid, msg, timeout: (timeout + 1000)) do
-          {:ok, count} ->
+          {:ok, _count} ->
             flags = TM.Mercury.Tag.MetadataFlag.all
-            {:ok, tag} = get_tag_id_buffer(pid, flags)
+            {:ok, _tag} = get_tag_id_buffer(pid, flags)
           {:error, :no_tags_found} ->
             {:error, :no_tags_found}
         end
@@ -215,21 +218,15 @@ defmodule TM.Mercury.Reader do
     # Validate the read plan
     case ReadPlan.validate(rp) do
       [errors: []] -> :ok
+        :ok = initialize_reader(pid)
+
         # prepare the read plan
         :ok = ReadPlan.prepare(pid, rp)
-
-        # Configure the region
-        case get_region(pid) do
-          {:ok, :na} -> :noop
-          {:ok, :none} ->
-            set_region(pid, :na)
-          {:error, error} ->
-            raise TM.Mercury.Error, error
-        end
 
         # clear the tag buffer`
         :ok = clear_tag_id_buffer(pid)
 
+        # TODO: Move to Command module.
         # assemble the payload
         payload = <<
           0x00 :: uint16, # timout 0 for embedded read
@@ -245,7 +242,7 @@ defmodule TM.Mercury.Reader do
           |> Message.encode(payload)
         case Serial.send_data(pid, msg, timeout: 500) do
           {:ok, _} ->
-            Serial.start_async(pid)
+            Serial.start_async(pid, cb)
           error ->
             error
         end

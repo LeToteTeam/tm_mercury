@@ -1,7 +1,4 @@
 defmodule TM.Mercury.Tag.MetadataFlag do
-  use Bitwise
-  import TM.Mercury.Utils.Binary
-
   use TM.Mercury.Utils.Enum, [
     none:         0x0000,
     read_count:   0x0001,
@@ -15,14 +12,4 @@ defmodule TM.Mercury.Tag.MetadataFlag do
     gpio_status:  0x0100,
     all:          0x01FF
   ]
-
-  def all() do
-    [{_, h} | t] =
-      list()
-      |> Enum.reject(fn({_, v}) -> v == 0  end)
-    Enum.reduce(t, h, fn({_, v}, acc) ->
-      acc ||| v
-    end)
-  end
-
 end

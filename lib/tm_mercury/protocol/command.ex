@@ -61,8 +61,8 @@ defmodule TM.Mercury.Protocol.Command do
   end
 
   defp build_command({:set_power_mode, code}, [mode: mode]) do
-    with {:ok, mode} <- PowerMode.encode(mode),
-      do: {:ok, Message.encode(code, mode)}
+    with {:ok, encoded_mode} <- PowerMode.encode(mode),
+      do: {:ok, Message.encode(code, <<encoded_mode>>)}
   end
 
   defp build_command({:set_tag_protocol, code}, [protocol: protocol]) do
@@ -82,11 +82,11 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code, <<2, ant :: binary>>)}
   end
 
-  @doc """
-  Build the command for get_reader_stats opcode.
-  The order of parameters in the keyword list is important.
-  """
-  defp build_command({:get_reader_stats, code}, [option: option, flags: flags]) do
+  # The order of parameters in the keyword list is important.
+  defp build_command({:get_reader_stats, code}, opts) do
+    flags = opts[:flags]
+    option = opts[:option]
+
     with {:ok, encoded_flags} <- Stats.Flag.encode(flags),
          {:ok, option}        <- Stats.Option.encode(option),
       do: {:ok, Message.encode(code, <<option, encoded_flags>>)}
