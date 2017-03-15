@@ -1,8 +1,9 @@
 defmodule TM.Mercury.Message do
-  alias TM.Mercury.Protocol.Opcode
   import TM.Mercury.Utils.Binary
+  use Bitwise, operators_only: true
 
   alias __MODULE__
+  alias TM.Mercury.Protocol.Opcode
 
   defstruct [length: nil, opcode: nil, status: nil, data: nil, crc: nil]
 
@@ -16,22 +17,21 @@ defmodule TM.Mercury.Message do
   end
 
   def decode(%Message{opcode: :version} = msg) do
-    <<bootloader_vsn1 :: uint8,
-      bootloader_vsn2 :: uint8,
-      bootloader_vsn3 :: uint8,
-      bootloader_vsn4 :: uint8,
-      hardware_date :: uint32,
-      firmware_date :: uint32,
-      firmware_vsn :: uint32,
-      protocols :: binary(4)>> = msg.data
+    <<bl :: 4-bytes,
+      hw :: 4-bytes,
+      fw_date :: 4-bytes,
+      fw :: 4-bytes,
+      protocols :: uint32>> = msg.data
 
-    data = %{
-      bootloader_version: {bootloader_vsn1, bootloader_vsn2, bootloader_vsn3, bootloader_vsn4},
-      hardware_date: hardware_date,
-      firmware_date: firmware_date,
-      firmware_version: firmware_vsn,
-      protocols: protocols
-    }
+    <<model, _tail :: binary>> = hw
+
+    data = %{bootloader: bl,
+      hardware: hw,
+      firmware_date: fw_date,
+      firmware: fw,
+      model: TM.Mercury.Reader.Model.decode!(model),
+      supported_protocols: decode_protocols(protocols)}
+
     Map.put(msg, :data, data)
   end
 
@@ -68,8 +68,6 @@ defmodule TM.Mercury.Message do
   def decode(%Message{opcode: :read_tag_id_multiple} = msg) do
     <<metadata_flags :: uint16, _, count, tail :: binary>> = msg.data
     if byte_size(tail) > 0 do
-      IO.puts "Byte Size > 0"
-      IO.puts "Count: #{inspect count}"
       {_, results} =
         Enum.reduce(1..count, {tail, []}, fn(_, {tail, result}) ->
           {tail, res} = TM.Mercury.Tag.parse(tail, metadata_flags)
@@ -96,5 +94,29 @@ defmodule TM.Mercury.Message do
     msg
   end
 
+  def decode(%{opcode: :get_current_program} = msg) do
+    <<program>> = msg.data
+    app = case program &&& 0x03 do
+      1 -> :bootloader
+      2 -> :application
+      _ -> {:error, :unknown_program}
+    end
+    Map.put(msg, :data, app)
+  end
+
   def decode(msg), do: msg
+
+  def decode_protocols(mask), do: decode_protocols(mask, 32, 0, [])
+  def decode_protocols(mask, size, bit, acc) when bit < size do
+    if (mask &&& (1 <<< bit)) === 0 do
+      decode_protocols(mask, size, bit + 1, acc)
+    else
+      decode_protocols(mask, size, bit + 1, [bit + 1 | acc])
+    end
+  end
+  def decode_protocols(_mask, size, bit, acc) when bit == size do
+    Enum.map(acc, &(TM.Mercury.Tag.Protocol.decode!(&1)))
+    |> Enum.reverse
+  end
+
 end

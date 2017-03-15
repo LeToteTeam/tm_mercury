@@ -4,7 +4,7 @@ defmodule TM.Mercury.Mixfile do
   def project do
     [app: :tm_mercury,
      version: "0.1.0",
-     elixir: "~> 1.3 or ~> 1.4-dev",
+     elixir: "~> 1.4.0",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps()]
@@ -14,7 +14,7 @@ defmodule TM.Mercury.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger, :connection, :nerves_uart]]
+    [extra_applications: [:logger, :connection, :nerves_uart]]
   end
 
   # Dependencies can be Hex packages:

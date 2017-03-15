@@ -25,4 +25,16 @@ defmodule TM.Mercury.Utils.Binary do
   def bytes_for_bits(bits) do
     ((bits - 1) >>> 3) + 1
   end
+
+  def enum_flags_mask(list, enum_module) do
+    Enum.map(list, fn(x) -> apply(enum_module, :"encode!", [x]) end)
+    |> Enum.reduce(0, fn(x, acc) -> bor(x, acc) end)
+  end
+
+  def to_integer(true), do: 1
+  def to_integer(false), do: 0
+
+  def decode_boolean(<<1>>), do: true
+  def decode_boolean(<<0>>), do: false
+  def decode_uint32(<<value :: uint32>>), do: value
 end

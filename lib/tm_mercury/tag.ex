@@ -40,12 +40,12 @@ defmodule TM.Mercury.Tag do
   end
 
   def parse_timestamp(data, 0), do: data
-  def parse_timestamp({<<ts :: binary(4), tail :: binary>>, result}, _) do
+  def parse_timestamp({<<ts :: uint32, tail :: binary>>, result}, _) do
     {tail, Keyword.put(result, :timestamp, ts)}
   end
 
   def parse_phase(data, 0), do: data
-  def parse_phase({<<phase :: binary(2), tail :: binary>>, result}, _) do
+  def parse_phase({<<phase :: uint16, tail :: binary>>, result}, _) do
     {tail, Keyword.put(result, :phase, phase)}
   end
 

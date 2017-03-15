@@ -1,8 +1,8 @@
 defmodule TM.Mercury do
   alias TM.Mercury.ReadPlan
 
-  # @spec start_link() ::
-  #   {:ok, pid} | {:error, term}
+  @spec enumerate() ::
+    map | {:error, term}
   defdelegate enumerate(),
     to: Nerves.UART
 
@@ -11,31 +11,28 @@ defmodule TM.Mercury do
   with the reader over UART connected via TTL / USB
 
   params:
-    * dev - The device file for the reader serial connection
     * opts
+      * `:device` - The device file for the reader serial connection
       * `:speed` - The port speed, example: speed: 115200
   """
-  @spec start_link(dev :: binary, opts :: list) ::
+  @spec start_link(opts :: list) ::
     {:ok, pid} | {:error, term}
-  defdelegate start_link(device, opts),
+  defdelegate start_link(opts),
     to: TM.Mercury.Reader
 
-  @doc """
-  Disconnect the reader.  The connection will be restarted.
-  """
-  @spec disconnect(pid) ::
+  @spec reconnect(pid) ::
     {:ok, pid} | {:error, term}
-  defdelegate disconnect(pid),
+  defdelegate reconnect(pid),
     to: TM.Mercury.Reader
 
-  @spec get_config_param(pid, key :: String.t) ::
+  @spec get_param(pid, key :: atom) ::
     {:ok, term} | {:error, term}
-  defdelegate get_config_param(pid, key),
+  defdelegate get_param(pid, key),
     to: TM.Mercury.Reader
 
-  @spec set_config_param(pid, key :: String.t, val :: any) ::
+  @spec set_param(pid, key :: atom, val :: any) ::
     {:ok, term} | {:error, term}
-  defdelegate set_config_param(pid, key, val),
+  defdelegate set_param(pid, key, val),
     to: TM.Mercury.Reader
 
   @spec read_sync(pid, ReadPlan.t) ::
@@ -43,18 +40,18 @@ defmodule TM.Mercury do
   defdelegate read_sync(pid, read_plan),
     to: TM.Mercury.Reader
 
-  @spec read_sync(pid, ReadPlan.t, timeout :: pos_integer) ::
+  @spec read_sync(pid) ::
     {:ok, term} | {:error, term}
-  defdelegate read_sync(pid, read_plan, timeout),
+  defdelegate read_sync(pid),
     to: TM.Mercury.Reader
 
-  @spec read_async_start(pid, ReadPlan.t) ::
-    {:ok, term} | {:error, term}
-  defdelegate read_async_start(pid, read_plan),
-    to: TM.Mercury.Reader
+  #@spec read_async_start(pid, ReadPlan.t) ::
+  #  {:ok, term} | {:error, term}
+  #defdelegate read_async_start(pid, read_plan),
+  #  to: TM.Mercury.Reader
 
-  @spec read_async_stop(pid) ::
-    {:ok, term} | {:error, term}
-  defdelegate read_async_stop(pid),
-    to: TM.Mercury.Reader
+  #@spec read_async_stop(pid) ::
+  #  {:ok, term} | {:error, term}
+  #defdelegate read_async_stop(pid),
+  #  to: TM.Mercury.Reader
 end

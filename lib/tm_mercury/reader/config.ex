@@ -95,14 +95,52 @@ defmodule TM.Mercury.Reader.Config do
     Transport.decode!(transport)
   end
 
+  def decode_data(:send_crc, data),
+    do: decode_boolean(data)
+
+  def decode_data(:safety_antenna_check, data),
+    do: decode_boolean(data)
+
+  def decode_data(:safety_temperature_check, data),
+    do: decode_boolean(data)
+
+  def decode_data(:record_highest_rssi, data),
+    do: decode_boolean(data)
+
+  def decode_data(:rssi_in_dbm, data),
+    do: decode_boolean(data)
+
+  def decode_data(:self_jammer_cancellation, data),
+    do: decode_boolean(data)
+
+  def decode_data(:extended_epc, data),
+    do: decode_boolean(data)
+
+  def decode_data(:trigger_read_gpio, <<data>>),
+    do: data
+
+  def decode_data(:antenna_control_gpio, <<data>>),
+    do: data
+
+  def decode_data(:unique_by_antenna, data),
+    do: decode_boolean(data)
+
+  def decode_data(:unique_by_protocol, data),
+    do: decode_boolean(data)
+
+  def decode_data(:unique_by_data, data),
+    do: decode_boolean(data)
+
   def decode_data(:enable_read_filter, data),
     do: decode_boolean(data)
 
   def decode_data(:read_filter_timeout, data),
     do: decode_uint32(data)
 
-  defp decode_boolean(<<1>>), do: true
-  defp decode_boolean(<<0>>), do: false
+  # Requires model.  Deal with this one later
+  def decode_data(:transmit_power_save, data),
+    do: data
 
-  defp decode_uint32(<<value :: uint32>>), do: value
+  def decode_data(_, data),
+    do: data
 end

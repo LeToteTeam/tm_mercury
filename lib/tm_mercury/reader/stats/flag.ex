@@ -1,7 +1,7 @@
 defmodule TM.Mercury.Reader.Stats.Flag do
   use Bitwise
   use TM.Mercury.Utils.Enum, [
-    # Total time the port has been transmitting, in milliseconds. Resettable
+  # Total time the port has been transmitting, in milliseconds. Resettable
   rf_on_time:         (1<<<0),
   # detected noise floor with transmitter off. recomputed when requested, not resettable.
   noise_floor:        (1<<<1),

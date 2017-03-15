@@ -1,248 +1,386 @@
 defmodule TM.Mercury.Reader do
-  @timeout 5000
-  @read_timeout 500
+  use GenServer
+  require Logger
+
+  @default_opts power_mode: :full, region: :na, antennas: 1,
+                tag_protocol: :gen2, read_timeout: 500
+  @ts_opt_keys [:device, :speed, :timeout, :framing]
 
   import TM.Mercury.Utils.Binary
   use Bitwise
 
+  alias __MODULE__
+  alias TM.Mercury.{Message, Transport, ReadPlan}
   alias TM.Mercury.Protocol.{Opcode, Command}
-  alias TM.Mercury.Message
-  alias TM.Mercury.Connection, as: Serial
-  alias TM.Mercury.ReadPlan
 
-  # Basic Commands
+  defstruct [:model, :power_mode, :region, :tag_protocol, :antennas]
 
-  def start_link(device, opts) do
-    Connection.start_link(Serial, {device, defaults(opts)})
-  end
+  # Client API
 
   @doc """
   Disconnect the reader.  The connection will be restarted.
   """
-  def disconnect(pid, wait? \\ false)
-  def disconnect(pid, wait?) do
-    Connection.call(pid, {:close, wait?})
+  def reconnect(pid, wait? \\ false)
+  def reconnect(pid, wait?) do
+    GenServer.call(pid, [:reconnect, wait?])
   end
 
-  def reboot(pid) do
-    # Drop baud rate down to 9600 before rebooting
-    with :ok <- change_baud_rate(pid, 9600),
-         :ok <- boot_bootloader(pid),
-          Process.sleep(200),
-          :ok <- disconnect(pid, true),
-          # Reconnected at this point
-          {:ok, :bootloader} <- get_current_program(pid),
-          {:ok, _version} <- boot_firmware(pid),
-          {:ok, :application} <- get_current_program(pid),
-          :ok <- change_baud_rate(pid, 115200),
-          do: :ok
-  end
-
+  @doc """
+  Execute the reader's bootloader.
+  """
   def boot_bootloader(pid) do
-    Command.build(:boot_bootloader)
-    |> send_command(pid)
+    GenServer.call(pid, :boot_bootloader)
   end
 
+  @doc """
+  Execute the reader's firmware from the bootloader.
+  """
   def boot_firmware(pid) do
-    Command.build(:boot_firmware)
-    |> send_command(pid)
+    GenServer.call(pid, :boot_firmware)
   end
 
   @doc """
-  Change baud rate on both reader and host.
+  Reboot the reader.
   """
-  def change_baud_rate(pid, rate) do
-    # Change on the reader.
-    set_baud_rate(pid, rate)
-    # Change on the host
-    # Not sure Nerves.UART can change baud rate dynamically yet.
-    Serial.set_speed(pid, rate)
+  def reboot(pid) do
+    GenServer.call(pid, :reboot)
   end
 
   @doc """
-  Change baud rate on the reader only.
+  Return hardware, firmware, and bootloader version details.
   """
-  def set_baud_rate(pid, rate) do
-    Command.build(:set_baud_rate, rate: rate)
-    |> send_command(pid)
-  end
-
-  def get_region(pid) do
-    Command.build(:get_region)
-    |> send_command(pid)
-  end
-
-  def set_region(pid, region) do
-    Command.build(:set_region, region: region)
-    |> send_command(pid)
-  end
-
-  def get_config_param(pid, key) do
-    Command.build(:get_reader_optional_params, param: key)
-    |> send_command(pid)
-  end
-
-  def set_config_param(_pid, _key, _value) do
-    # case Config.encode(key) do
-    #   {:ok, key} ->
-    #
-    #     msg =
-    #       Opcode.set_reader_optional_params()
-    #       |> Message.encode(<<0x01, key :: binary>>)
-    #     Serial.send_data(pid, msg)
-    #   error ->
-    #     error
-    #
-    # end
+  def get_version(pid) do
+    GenServer.call(pid, :version)
   end
 
   @doc """
-  Retrieve hardware, firmware, and bootloader version details.
-  """
-  def version(pid) do
-    Command.build(:version)
-    |> send_command(pid)
-  end
-
-  @doc """
-  Return the identity of the program currently running on the device (bootloader or application).
+  Return the identity of the program currently running on the device.
+  Bootloader or application
   """
   def get_current_program(pid) do
-    {:ok, <<program>>} = Command.build(:get_current_program)
-                         |> send_command(pid)
-    # TODO: Move decoding to decoder
-    case program &&& 0x03 do
-      1 -> {:ok, :bootloader}
-      2 -> {:ok, :application}
-      _ -> {:error, :unknown_program}
+    GenServer.call(pid, :get_current_program)
+  end
+
+  @doc """
+  Set the reader's serial baud rate.
+  The host's baud rate must be changed separately.
+  """
+  def set_baud_rate(pid, rate) do
+    GenServer.call(pid, [:set_baud_rate, rate])
+  end
+
+  @doc """
+  TODO: Docs
+  """
+  def get_tag_id_buffer(pid, metadata_flags) do
+    GenServer.call(pid, [:get_tag_id_buffer, metadata_flags])
+  end
+
+  @doc """
+  Clear the tag buffer.
+  """
+  def clear_tag_id_buffer(pid) do
+    GenServer.call(pid, :clear_tag_id_buffer)
+  end
+
+  @doc """
+  Configure the region that the reader will operate within.
+  """
+  def set_region(pid, region) do
+    GenServer.call(pid, [:set_region, region])
+  end
+
+  @doc """
+  Return the region that the reader is currently configured to operate within.
+  """
+  def get_region(pid) do
+    GenServer.call(pid, :get_region)
+  end
+
+  @doc """
+  TODO
+  """
+  def set_power_mode(pid, mode) do
+    GenServer.call(pid, [:set_power_mode, mode])
+  end
+
+  @doc """
+  TODO
+  """
+  def get_power_mode(pid) do
+    GenServer.call(pid, :get_power_mode)
+  end
+
+  @doc """
+  TODO
+  """
+  def set_tag_protocol(pid, protocol) do
+    GenServer.call(pid, [:set_tag_protocol, protocol])
+  end
+
+  @doc """
+  TODO
+  """
+  def get_tag_protocol(pid) do
+    GenServer.call(pid, :get_tag_protocol)
+  end
+
+  @doc """
+  TODO
+  """
+  def get_antenna_port(pid) do
+    GenServer.call(pid, :get_antenna_port)
+  end
+
+  @doc """
+  TODO
+  """
+  def set_antenna_port(pid, ports) do
+    GenServer.call(pid, [:set_antenna_port, ports])
+  end
+
+  @doc """
+  TODO
+  """
+  def get_reader_stats(pid, option, flags) do
+    # TODO: Implement decoding.
+    # See: https://www.pivotaltracker.com/story/show/141738711
+    GenServer.call(pid, [:get_reader_stats, option, flags])
+  end
+
+  @doc """
+  TODO
+  """
+  def reset_reader_stats(pid, flags) do
+    GenServer.call(pid, [:get_reader_stats, :reset, flags])
+  end
+
+  @doc """
+  TODO
+  """
+  def get_param(pid, key) do
+    GenServer.call(pid, [:get_reader_optional_params, key])
+  end
+
+  @doc """
+  TODO
+  """
+  def set_param(pid, key, value) do
+    GenServer.call(pid, [:set_reader_optional_params, key, value])
+  end
+
+  @doc """
+  Perform a synchronous tag read using the reader configuration
+  """
+  def read_sync(pid) do
+    GenServer.call(pid, :read_sync)
+  end
+
+  @doc """
+  Perform a synchronous tag read using the provided read plan
+  """
+  def read_sync(pid, %ReadPlan{} = rp) do
+    GenServer.call(pid, [:read_sync, rp])
+  end
+
+  @doc """
+  Change the read timeout used for synchronous tag reading.
+  """
+  def set_read_timeout(pid, timeout) do
+    GenServer.call(pid, [:set_read_timeout, timeout])
+  end
+
+  # Server API
+
+  def start_link(opts) do
+    device = opts[:device]
+    name = Path.basename(device) |> String.to_atom
+    GenServer.start_link(__MODULE__, {device, opts}, name: name)
+  end
+
+  def init({device, opts}) do
+    Logger.debug "Starting RFID reader process for #{device} with pid #{inspect self()}"
+
+    opts = Keyword.merge(@default_opts, opts)
+    ts_opts = Keyword.take(opts, @ts_opt_keys)
+
+    case Connection.start_link(Transport, ts_opts) do
+      {:ok, ts} ->
+        send self(), :initialize_reader
+        new_reader = struct(%Reader{}, opts)
+
+        state =
+          Map.new(opts)
+          |> Map.take([:speed, :read_timeout])
+          |> Map.put(:init, new_reader)
+          |> Map.put(:transport, ts)
+
+        {:ok, state}
+      error ->
+        Logger.warn "Failed to open connection to RFID device at #{device}: #{inspect error}"
+        error
     end
   end
 
-  def get_tag_id_buffer(pid, flags) do
-    Command.build(:get_tag_id_buffer, metadata_flags: flags)
-    |> send_command(pid)
+  def handle_info(:initialize_reader, state) do
+    {:ok, rdr} = initialize_reader(state)
+    {:noreply, Map.put(state, :reader, rdr)}
   end
 
-  def clear_tag_id_buffer(pid) do
-    Command.build(:clear_tag_id_buffer)
-    |> send_command(pid)
+  def handle_call(:reboot, _from, state) do
+    with :ok <- reboot_reader(state),
+         {:ok, reader} <- initialize_reader(state),
+      do: {:reply, :ok, Map.put(state, :reader, reader)}
   end
 
-  def get_power_mode(pid) do
-    Command.build(:get_power_mode)
-    |> send_command(pid)
+  def handle_call([:reconnect, wait], _from, %{transport: ts} = s) do
+    resp = Transport.close(ts, wait)
+    {:reply, resp, s}
   end
 
-  def set_power_mode(pid, mode) do
-    Command.build(:set_power_mode, mode: mode)
-    |> send_command(pid)
+  def handle_call(:boot_bootloader, _from, %{transport: ts, reader: rdr} = s) do
+    resp = boot_bootloader(ts, rdr)
+    {:reply, resp, s}
   end
 
-  def get_tag_protocol(pid) do
-    Command.build(:get_tag_protocol)
-    |> send_command(pid)
+  def handle_call([:set_region|[region]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+    case execute(ts, rdr, cmd) do
+      :ok ->
+        {:reply, :ok, update_reader_state(s, :region, region)}
+      error ->
+        {:reply, error, s}
+    end
   end
 
-  def set_tag_protocol(pid, protocol) do
-    Command.build(:set_tag_protocol, protocol: protocol)
-    |> send_command(pid)
+  def handle_call([:read_sync, %ReadPlan{} = rp], _from, %{transport: ts, reader: rdr} = s) do
+    case read_sync(ts, rdr, rp, s.read_timeout) do
+      {:ok, tags, new_reader} ->
+        {:reply, {:ok, tags}, %{s | reader: new_reader}}
+      {:error, _reason} = error ->
+        {:reply, error, s}
+    end
   end
 
-  def get_antenna_port(pid) do
-    Command.build(:get_antenna_port)
-    |> send_command(pid)
+  def handle_call(:read_sync, _from, %{transport: ts, reader: rdr} = s) do
+    # Create and use a read plan based on the current reader settings
+    rp = %ReadPlan{tag_protocol: rdr.tag_protocol, antennas: rdr.antennas}
+    case read_sync(ts, rdr, rp, s.read_timeout) do
+      {:ok, tags, _} ->
+        {:reply, {:ok, tags}, s}
+      {:error, _reason} = error ->
+        {:reply, error, s}
+    end
   end
 
-  def set_antenna_port(pid, ports) do
-    Command.build(:set_antenna_port, ports: ports)
-    |> send_command(pid)
+  def handle_call([:set_read_timeout, timeout], _from, state) do
+    {:reply, :ok, %{state | read_timeout: timeout}}
   end
 
-  def get_reader_stats(pid, option \\ :get_per_port, flags \\ :all) do
-    initialize_reader(pid)
-    Command.build(:get_reader_stats, option: option, flags: flags)
-    |> send_command(pid)
+  @doc """
+  Catch-all handlers for op commands that don't require any state binding or special handling
+  """
+  def handle_call(cmd, _from, %{transport: ts, reader: rdr} = s) when is_list(cmd) do
+    resp = execute(ts, rdr, cmd)
+    {:reply, resp, s}
+  end
+  def handle_call(cmd, _from, %{transport: ts, reader: rdr} = s) when is_atom(cmd) do
+    resp = execute(ts, rdr, [cmd])
+    {:reply, resp, s}
   end
 
-  def reset_reader_stats(pid, flags) do
-    Command.build(:get_reader_stats, option: :reset, flags: flags)
-    |> send_command(pid)
+  defp initialize_reader(%{transport: ts, init: rdr}) do
+    with {:ok, version} <- execute(ts, rdr, :version),
+         # Pick up the model first for any downstream encoding/decoding that needs it
+         reader = Map.put(rdr, :model, version.model),
+         :ok <- execute(ts, reader, [:set_region, reader.region]),
+         :ok <- execute(ts, reader, [:set_power_mode, reader.power_mode]),
+         :ok <- execute(ts, reader, [:set_tag_protocol, reader.tag_protocol]),
+         :ok <- execute(ts, reader, [:set_antenna_port, reader.antennas]),
+      do: {:ok, reader}
   end
 
-  def initialize_reader(pid) do
-    opts = Application.get_env(:tm_mercury, :reader)
-    region = opts[:region]
-    power_mode = opts[:power_mode]
+  defp reboot_reader(%{transport: ts, reader: rdr, speed: speed}) do
+    # This should silently fail with {:error, :invalid_opcode} if we're not actually in async mode.
+    _ = read_async_stop(ts)
 
-    :ok = set_region(pid, region)
-    :ok = set_power_mode(pid, power_mode)
+    with :ok <- change_baud_rate(ts, rdr, 9600),
+         :ok <- boot_bootloader(ts, rdr),
+         :ok <- Transport.close(ts, true),
+         # Reconnected at this point
+         {:ok, :bootloader} <- execute(ts, rdr, :get_current_program),
+         {:ok, _version} <- execute(ts, rdr, :boot_firmware),
+         {:ok, :application} <- execute(ts, rdr, :get_current_program),
+         :ok <- change_baud_rate(ts, rdr, speed),
+      do: :ok
   end
 
-  def read_sync(pid, %ReadPlan{} = rp, timeout \\ @read_timeout) do
+  defp change_baud_rate(ts, reader, rate) do
+    # Change the baud rate on both the reader and the host.
+    with :ok <- execute(ts, reader, [:set_baud_rate, rate]),
+         :ok <- Transport.set_speed(ts, rate),
+      do: :ok
+  end
+
+  defp boot_bootloader(ts, reader) do
+    case execute(ts, reader, :boot_bootloader) do
+      :ok ->
+        # Give the reader time to gather its wits
+        Process.sleep(200)
+        :ok
+      {:error, :invalid_opcode} ->
+        # Already in bootloader, ignore
+        :ok
+    end
+  end
+
+  defp read_sync(ts, rdr, %ReadPlan{} = rp, timeout) do
     # Validate the read plan
     case ReadPlan.validate(rp) do
-      [errors: []] -> :ok
-        :ok = initialize_reader(pid)
+      [errors: []] ->
+        {:ok, new_reader} = prepare_read(ts, rdr, rp)
 
-        # prepare the read plan
-        :ok = ReadPlan.prepare(pid, rp)
+        search_flags = [:configured_list, :large_tag_population_support]
+        op = [:read_tag_id_multiple, search_flags, timeout]
 
-        # clear the tag buffer`
-        :ok = clear_tag_id_buffer(pid)
+        {:ok, cmd} = Command.build(rdr, op)
 
-        # TODO: Move this to the Command module.
-        # assemble the payload
-        payload = <<
-          0x00, # Option Byte (autonomous_read)
-          0x00, 0x13, #Search Flags
-          timeout :: uint16
-        >>
-        # Start the read
-        msg =
-          Opcode.read_tag_id_multiple
-          |> Message.encode(payload)
-        case Serial.send_data(pid, msg, timeout: (timeout + 1000)) do
+        case Transport.send_data(ts, cmd, timeout + 1000) do
           {:ok, _count} ->
             flags = TM.Mercury.Tag.MetadataFlag.all
-            {:ok, _tag} = get_tag_id_buffer(pid, flags)
-          {:error, :no_tags_found} ->
-            {:error, :no_tags_found}
+            {:ok, tags} = execute(ts, rdr, [:get_tag_id_buffer, flags])
+            {:ok, tags, new_reader}
+          {:error, _reason} = err ->
+            err
         end
       [errors: errors] ->
         {:error, errors}
     end
   end
 
-  def read_async_start(pid, %ReadPlan{} = rp, callback \\ nil) do
+  defp read_async_start(ts, rdr, %ReadPlan{} = rp, callback \\ nil) do
     cb = callback || self()
     # Validate the read plan
     case ReadPlan.validate(rp) do
       [errors: []] -> :ok
-        :ok = initialize_reader(pid)
-
-        # prepare the read plan
-        :ok = ReadPlan.prepare(pid, rp)
-
-        # clear the tag buffer`
-        :ok = clear_tag_id_buffer(pid)
+        {:ok, _new_reader} = prepare_read(ts, rdr, rp)
 
         # TODO: Move to Command module.
         # assemble the payload
         payload = <<
           0x00 :: uint16, # timout 0 for embedded read
           0x01, # Option Byte (Continuious Read),
-          TM.Mercury.Protocol.Opcode.read_tag_id_multiple :: uint8,
+          TM.Mercury.Protocol.Opcode.read_tag_id_multiple,
           0x00 :: uint16, #Search Flags
-          TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol) :: binary,
+          TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol),
           0x7, 0x22, 0x10, 0x0, 0x1b, 0x0, 0xfa, 0x1, 0xff # This makes things work ¯\_(ツ)_/¯
         >>
         # Start the read
         msg =
           Opcode.multi_protocol_tag_op
           |> Message.encode(payload)
-        case Serial.send_data(pid, msg, timeout: 500) do
+        case Transport.send_data(ts, msg, timeout: 500) do
           {:ok, _} ->
-            Serial.start_async(pid, cb)
+            Transport.start_async(ts, cb)
           error ->
             error
         end
@@ -251,35 +389,67 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  def read_async_stop(pid) do
-    payload = <<
-      0x00,
-      0x00,
-      0x02>>
+  def read_async_stop(ts) do
+    payload = <<0x0::16, 0x02>>
     msg =
       Opcode.multi_protocol_tag_op
       |> Message.encode(payload)
-    case Serial.send_data(pid, msg, timeout: 500) do
+    case Transport.send_data(ts, msg, 500) do
       {:ok, _} ->
-        Serial.stop_async(pid)
+        :ok
       error ->
         error
     end
   end
 
-  ## Helpers
+  defp prepare_read(ts, rdr, %ReadPlan{} = rp) do
+    # First verify the protocol
+    rdr = if rp.tag_protocol != rdr.tag_protocol do
+      Logger.debug "Read plan's tag protocol differs from reader, reconfiguring reader"
+      :ok = execute(ts, rdr, [:set_tag_protocol, rp.tag_protocol])
+      %{rdr | tag_protocol: rp.tag_protocol}
+    else
+      rdr
+    end
 
-  defp defaults(opts) do
-    Keyword.put_new(opts, :timeout, @timeout)
+    # Next check the antennas
+    rdr = if rp.antennas != rdr.antennas do
+      Logger.debug "Read plan's antenna settings differ from reader, reconfiguring reader"
+      :ok = execute(ts, rdr, [:set_antenna_port, rp.antennas])
+      %{rdr | antennas: rp.antennas}
+    else
+      rdr
+    end
+
+    # Clear the tag buffer
+    :ok = execute(ts, rdr, :clear_tag_id_buffer)
+
+    # Reset statistics
+    {:ok, _} = execute(ts, rdr, [:get_reader_stats, :reset, :rf_on_time])
+
+    {:ok, rdr}
   end
 
-  def send_command(:error, _pid),
+  ## Helpers
+
+  defp execute(ts, %Reader{} = rdr, cmd) when is_atom(cmd),
+    do: execute(ts, rdr, [cmd])
+  defp execute(ts, %Reader{} = rdr, [_key|_args] = cmd) do
+    Command.build(rdr, cmd)
+    |> send_command(ts)
+  end
+
+  defp send_command(:error, _ts),
     do: {:error, :command_error}
-  def send_command({:error, _reason} = error, _pid),
+  defp send_command({:error, _reason} = error, _ts),
     do: error
-  def send_command({:ok, cmd}, pid),
-    do: send_command(cmd, pid)
-  def send_command(cmd, pid),
-    do: Serial.send_data(pid, cmd)
+  defp send_command({:ok, cmd}, ts),
+    do: send_command(cmd, ts)
+  defp send_command(cmd, ts),
+    do: Transport.send_data(ts, cmd)
+
+  # More readable than %{state | reader: %{state.reader | key: value}}!
+  defp update_reader_state(state, key, value),
+    do: %{state | reader: Map.put(state.reader, key, value)}
 
 end

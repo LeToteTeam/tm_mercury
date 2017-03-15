@@ -1,4 +1,4 @@
-defmodule TM.Mercury.Connection do
+defmodule TM.Mercury.Transport do
   require Logger
 
   use Connection
@@ -25,19 +25,8 @@ defmodule TM.Mercury.Connection do
     rewind: 0x01
   ]
 
-  @model_hardware_id [
-    m5e:         0x00,
-    m5e_compact: 0x01,
-    m5e_i:       0x02,
-    m4e:         0x03,
-    m6e:         0x18,
-    m6e_prc:     0x19,
-    micro:       0x20,
-    m6e_nano:    0x30,
-    unknown:     0xFF,
-  ]
-
   @defaults [
+    speed: 115200,
     active: false,
     timeout: 5000,
     mode: :sync,
@@ -45,10 +34,11 @@ defmodule TM.Mercury.Connection do
     rx_framing_timeout: 500
   ]
 
-  def send_data(conn, data, opts \\ []) do
-    opts = defaults(opts)
-    timeout = opts[:timeout]
+  def send_data(conn, data) do
+    send_data(conn, data, :default)
+  end
 
+  def send_data(conn, data, timeout) do
     case Connection.call(conn, {:send, data}) do
       :ok ->
         case Connection.call(conn, {:recv, timeout}) do
@@ -83,29 +73,21 @@ defmodule TM.Mercury.Connection do
 
   # Connection API
 
-  def init({device, opts}) do
+  def init(opts) do
+    opts = Keyword.merge(@defaults, opts)
+    {:ok, uart} = Nerves.UART.start_link
+
     s = %{
-      device: device,
+      device: opts[:device],
       opts: opts,
-      uart: nil,
+      uart: uart,
       status: :sync,
       callback: nil
     }
     {:connect, :init, s}
   end
 
-  def connect(info, %{uart: pid, device: device, opts: opts} = s) do
-    Logger.debug "Connecting to RFID reader at #{device}"
-
-    uart_pid = if is_nil(pid) do
-      {:ok, new_pid} = Nerves.UART.start_link
-      new_pid
-    else
-      pid
-    end
-
-    new_state = %{s | uart: uart_pid}
-
+  def connect(info, %{uart: uart, device: device, opts: opts} = s) do
     handle_reply = case info do
       {:reconnect, from} ->
         fn(msg) -> Connection.reply(from, msg) end
@@ -113,19 +95,19 @@ defmodule TM.Mercury.Connection do
         fn _ -> :noop end
     end
 
-    case Nerves.UART.open(uart_pid, device, defaults(opts)) do
+    Logger.debug "Connecting to RFID reader at #{device}"
+    case Nerves.UART.open(uart, device, opts) do
       :ok ->
         handle_reply.(:ok)
-        {:ok, new_state}
+        {:ok, s}
       {:error, _} = error->
         handle_reply.(error)
-        {:backoff, 1000, new_state}
+        {:backoff, 1000, s}
     end
   end
 
   def disconnect(info, %{uart: pid, device: device} = s) do
-    Logger.debug "Disconnecting from RFID reader at #{inspect device}"
-
+    Logger.debug "Disconnecting from RFID reader at #{device}"
     _ = Nerves.UART.drain(pid)
     :ok = Nerves.UART.close(pid)
 
@@ -144,7 +126,6 @@ defmodule TM.Mercury.Connection do
         Logger.error("RFID UART error: #{inspect reason}")
         {:connect, :reconnect, s}
     end
-
   end
 
   def handle_call(_, _, %{uart: nil} = s) do
@@ -176,8 +157,11 @@ defmodule TM.Mercury.Connection do
     end
   end
 
-  def handle_call({:recv, timeout}, _, %{uart: pid} = s) do
+  def handle_call({:recv, timeout}, _, %{uart: pid} = s) when is_integer(timeout) do
     recv(Nerves.UART.read(pid, timeout), s)
+  end
+  def handle_call({:recv, :default}, _, %{uart: pid, opts: opts} = s) do
+    recv(Nerves.UART.read(pid, opts[:timeout]), s)
   end
 
   def handle_call({:close, wait}, from, s) do
@@ -204,10 +188,6 @@ defmodule TM.Mercury.Connection do
     IO.puts "Handle Info: :sync"
     IO.inspect data
     {:noreply, s}
-  end
-
-  defp defaults(opts) do
-    Keyword.merge(@defaults, opts)
   end
 
   defp recv({:ok, %{status: 0, length: 0}}, s) do

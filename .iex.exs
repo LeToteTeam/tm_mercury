@@ -1,6 +1,6 @@
 alias TM.Mercury.Utils
 alias TM.Mercury.Protocol.{Command, Opcode, Parameter, Region}
-alias TM.Mercury.{Reader, Reader.Config, ReadPlan, Tag, Tag.Protocol}
+alias TM.Mercury.{Reader, Reader.Config, ReadPlan, Tag, Tag.Protocol, Transport}
 
 defmodule Helpers do
   def dump_erl(beam_file_path) do

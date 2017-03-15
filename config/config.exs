@@ -29,5 +29,3 @@ use Mix.Config
 #
 #     import_config "#{Mix.env}.exs"
 
-config :tm_mercury, :reader,
-  region: :na, power_mode: :full
