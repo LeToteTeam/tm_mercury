@@ -20,9 +20,8 @@ defmodule TM.Mercury.Reader do
   @doc """
   Disconnect the reader.  The connection will be restarted.
   """
-  def reconnect(pid, wait? \\ false)
-  def reconnect(pid, wait?) do
-    GenServer.call(pid, [:reconnect, wait?])
+  def reconnect(pid) do
+    GenServer.call(pid, :reconnect)
   end
 
   @doc """
@@ -204,15 +203,15 @@ defmodule TM.Mercury.Reader do
     opts = Keyword.merge(@default_opts, opts)
     ts_opts = Keyword.take(opts, @ts_opt_keys)
 
-    case Connection.start_link(Transport, ts_opts) do
+    case Connection.start_link(Transport, {self(), ts_opts}) do
       {:ok, ts} ->
-        send self(), :initialize_reader
         new_reader = struct(%Reader{}, opts)
 
         state =
           Map.new(opts)
           |> Map.take([:speed, :read_timeout])
           |> Map.put(:init, new_reader)
+          |> Map.put(:reader, new_reader)
           |> Map.put(:transport, ts)
 
         {:ok, state}
@@ -222,19 +221,20 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  def handle_info(:initialize_reader, state) do
-    {:ok, rdr} = initialize_reader(state)
-    {:noreply, Map.put(state, :reader, rdr)}
+  def handle_info(:connected, state) do
+    case initialize_reader(state) do
+      {:ok, rdr} -> {:noreply, Map.put(state, :reader, rdr)}
+      _ -> {:noreply, state}
+    end
   end
 
   def handle_call(:reboot, _from, state) do
     with :ok <- reboot_reader(state),
-         {:ok, reader} <- initialize_reader(state),
-      do: {:reply, :ok, Map.put(state, :reader, reader)}
+      do: {:reply, :ok, state}
   end
 
-  def handle_call([:reconnect, wait], _from, %{transport: ts} = s) do
-    resp = Transport.close(ts, wait)
+  def handle_call(:reconnect, _from, %{transport: ts} = s) do
+    resp = Transport.reopen(ts)
     {:reply, resp, s}
   end
 
@@ -247,6 +247,36 @@ defmodule TM.Mercury.Reader do
     case execute(ts, rdr, cmd) do
       :ok ->
         {:reply, :ok, update_reader_state(s, :region, region)}
+      error ->
+        {:reply, error, s}
+    end
+  end
+
+  def handle_call([:set_power_mode|[mode]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+    # Handle set_power_mode separately so we can track the state change.
+    case execute(ts, rdr, cmd) do
+      :ok ->
+        {:reply, :ok, update_reader_state(s, :power_mode, mode)}
+      error ->
+        {:reply, error, s}
+    end
+  end
+
+  def handle_call([:set_tag_protocol|[protocol]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+    # Handle set_tag_protocol separately so we can track the state change.
+    case execute(ts, rdr, cmd) do
+      :ok ->
+        {:reply, :ok, update_reader_state(s, :tag_protocol, protocol)}
+      error ->
+        {:reply, error, s}
+    end
+  end
+
+  def handle_call([:set_antenna_port|[ports]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+    # Handle set_antenna_port seperately so we can track the state change.
+    case execute(ts, rdr, cmd) do
+      :ok ->
+        {:reply, :ok, update_reader_state(s, :antennas, ports)}
       error ->
         {:reply, error, s}
     end
@@ -305,7 +335,7 @@ defmodule TM.Mercury.Reader do
 
     with :ok <- change_baud_rate(ts, rdr, 9600),
          :ok <- boot_bootloader(ts, rdr),
-         :ok <- Transport.close(ts, true),
+         :ok <- Transport.reopen(ts),
          # Reconnected at this point
          {:ok, :bootloader} <- execute(ts, rdr, :get_current_program),
          {:ok, _version} <- execute(ts, rdr, :boot_firmware),
@@ -344,7 +374,7 @@ defmodule TM.Mercury.Reader do
 
         {:ok, cmd} = Command.build(rdr, op)
 
-        case Transport.send_data(ts, cmd, timeout + 1000) do
+        case Transport.send_data(ts, cmd) do
           {:ok, _count} ->
             flags = TM.Mercury.Tag.MetadataFlag.all
             {:ok, tags} = execute(ts, rdr, [:get_tag_id_buffer, flags])
@@ -378,7 +408,7 @@ defmodule TM.Mercury.Reader do
         msg =
           Opcode.multi_protocol_tag_op
           |> Message.encode(payload)
-        case Transport.send_data(ts, msg, timeout: 500) do
+        case Transport.send_data(ts, msg) do
           {:ok, _} ->
             Transport.start_async(ts, cb)
           error ->
@@ -394,7 +424,7 @@ defmodule TM.Mercury.Reader do
     msg =
       Opcode.multi_protocol_tag_op
       |> Message.encode(payload)
-    case Transport.send_data(ts, msg, 500) do
+    case Transport.send_data(ts, msg) do
       {:ok, _} ->
         :ok
       error ->
