@@ -25,7 +25,7 @@ defmodule TM.Mercury.Message do
 
     <<model, _tail :: binary>> = hw
 
-    data = %{bootloader: bl,
+    data = %TM.Mercury.Reader.Version{bootloader: bl,
       hardware: hw,
       firmware_date: fw_date,
       firmware: fw,

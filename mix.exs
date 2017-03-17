@@ -28,6 +28,7 @@ defmodule TM.Mercury.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [{:connection, "~> 1.0.0"},
-     {:nerves_uart, "~> 0.1"}]
+     {:nerves_uart, "~> 0.1"},
+     {:ex_doc, "~> 0.14", only: :dev, runtime: false}]
   end
 end
