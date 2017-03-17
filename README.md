@@ -7,11 +7,13 @@ UART.
 ## Examples
 
 ```
-iex(1)> {:ok, conn} = TM.Mercury.start_link "/dev/cu.usbmodem1411", speed: 115200, active: false
+iex(1)> {:ok, conn} = TM.Mercury.Reader.start_link device: "/dev/cu.usbmodem1411", speed: 115200
 {:ok, #PID<0.175.0>}
-iex(2)> TM.Mercury.version(conn)                                                 <<255, 0, 3, 29, 12>>
+iex(2)> TM.Mercury.Reader.get_version(conn)
 {:ok,
- %{bootloader_version: {18, 18, 19, 0}, firmware_date: 538251809,
-   firmware_version: 17236773, hardware_date: 536870913,
-   protocols: <<0, 0, 0, 244>>}}
+ %TM.Mercury.Reader.Version{bootloader: <<18, 18, 19, 0>>,
+  firmware: <<1, 7, 3, 37>>, firmware_date: <<32, 21, 18, 33>>,
+  hardware: <<32, 0, 0, 1>>, model: :micro, software: nil,
+  supported_protocols: [:iso180006b, :gen2, :iso180006b_ucode, :ipx64,
+   :ipx256]}}
 ```
