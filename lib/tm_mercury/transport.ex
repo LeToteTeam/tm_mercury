@@ -29,7 +29,6 @@ defmodule TM.Mercury.Transport do
     speed: 115200,
     active: true,
     timeout: 5000,
-    mode: :sync,
     framing: {TM.Mercury.Message.Framing, []},
     rx_framing_timeout: 500
   ]
@@ -40,15 +39,6 @@ defmodule TM.Mercury.Transport do
       {:ok, msg} -> {:ok, msg.data}
       {:error, error} -> {:error, error}
     end
-  end
-
-  def start_async(conn, callback \\ nil) do
-    callback = callback || self()
-    Connection.call(conn, {:start_async, callback})
-  end
-
-  def stop_async(conn) do
-    Connection.call(conn, :stop_async)
   end
 
   @doc """
@@ -130,16 +120,6 @@ defmodule TM.Mercury.Transport do
 
   def handle_call(_, _, %{uart: nil} = s) do
     {:reply, {:error, :closed}, s}
-  end
-
-  def handle_call({:start_async, callback}, _, %{uart: pid} = s) do
-    :ok = Nerves.UART.configure pid, active: true
-    {:reply, :ok, %{s | status: :async, callback: callback}}
-  end
-
-  def handle_call(:stop_async, _, %{uart: pid} = s) do
-    :ok = Nerves.UART.configure pid, active: false
-    {:reply, :ok, %{s | status: :sync, callback: nil}}
   end
 
   def handle_call({:set_speed, speed}, _, %{uart: pid, opts: opts} = s) do

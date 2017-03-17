@@ -424,6 +424,7 @@ defmodule TM.Mercury.Reader do
     end
   end
 
+  # TODO: Fix async.  This is currently broken.
   defp read_async_start(ts, rdr, %ReadPlan{} = rp, callback \\ nil) do
     cb = callback || self()
     # Validate the read plan
@@ -456,7 +457,7 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  def read_async_stop(ts) do
+  defp read_async_stop(ts) do
     payload = <<0x0::16, 0x02>>
     msg =
       Opcode.multi_protocol_tag_op
