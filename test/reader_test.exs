@@ -9,16 +9,20 @@ defmodule TM.Mercury.ReaderTest do
     {:ok, %{pid: pid}}
   end
 
-  test "Reader returns a tag synchronously", context do
-    rp = %ReadPlan{antennas: 1, tag_protocol: :gen2}
-    {:ok, [tag|_]} = Reader.read_sync(context.pid, rp)
+  test "Reader returns a tag synchronously using current reader settings", context do
+    {:ok, [tag|_]} = Reader.read_sync(context.pid)
     assert tag[:protocol] == :gen2
   end
 
-  test "Reader returns a tag asynchronously", context do
+  test "Reader returns a tag synchronously using a custom read plan", context do
     rp = %ReadPlan{antennas: 1, tag_protocol: :gen2}
-    Reader.read_async_start(context.pid, rp, self())
-    assert_receive {:tm_mercury, :message, %TM.Mercury.Message{}}
+    {:ok, [tag|_]} = Reader.read_sync(context.pid, rp)
+    assert tag[:protocol] == rp.tag_protocol
+  end
+
+  test "Reader returns a tag asynchronously using current reader settings", context do
+    Reader.read_async_start(context.pid, self())
+    assert_receive {:tm_mercury, :tags, _}, 1000
     Reader.read_async_stop(context.pid)
   end
 end
