@@ -6,11 +6,9 @@ defmodule TM.Mercury.Reader do
                 tag_protocol: :gen2, read_timeout: 500
   @ts_opt_keys [:device, :speed, :timeout, :framing]
 
-  import TM.Mercury.Utils.Binary
-
   alias __MODULE__
-  alias TM.Mercury.{Message, Transport, ReadPlan}
-  alias TM.Mercury.Protocol.{Opcode, Command}
+  alias TM.Mercury.{Transport, ReadPlan}
+  alias TM.Mercury.Protocol.Command
 
   defstruct [:model, :power_mode, :region, :tag_protocol, :antennas]
 
@@ -180,7 +178,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Perform a synchronous tag read using the reader configuration
+  Read tags synchronously using the current reader configuration
   """
   @spec read_sync(pid) :: {:ok, term} | {:error, term}
   def read_sync(pid) do
@@ -188,11 +186,38 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Perform a synchronous tag read using the provided read plan
+  Read tags synchronously using a custom read plan
   """
   @spec read_sync(pid, ReadPlan.t) :: {:ok, term} | {:error, term}
   def read_sync(pid, %ReadPlan{} = rp) do
     GenServer.call(pid, [:read_sync, rp])
+  end
+
+  @doc """
+  Start reading tags asynchronously using the current reader configuration
+  Tags will be sent to the process provided as the callback until `stop_read_async` is called.
+  """
+  @spec read_async_start(pid :: pid, callback :: pid) ::
+    {:ok, term} | {:error, term}
+  def read_async_start(pid, callback) do
+    GenServer.call(pid, [:read_async_start, callback])
+  end
+
+  @doc """
+  Start reading tags asynchronously using a custom read plan
+  Tags will be sent to the process provided as the callback until `stop_read_async` is called.
+  """
+  @spec read_async_start(pid :: pid, rp :: ReadPlan.t, callback :: pid) ::
+    {:ok, term} | {:error, term}
+  def read_async_start(pid, %ReadPlan{} = rp, callback) do
+    GenServer.call(pid, [:read_async_start, rp, callback])
+  end
+
+  @doc """
+  Stop reading tags asynchronously
+  """
+  def read_async_stop(pid) do
+    GenServer.call(pid, :read_async_stop)
   end
 
   @doc """
@@ -339,6 +364,48 @@ defmodule TM.Mercury.Reader do
     end
   end
 
+  def handle_call([:read_async_start, %ReadPlan{} = rp, cb], _from, %{transport: ts, reader: rdr} = s) do
+    # Pseudo-async until we implement true continuous reading
+    case read_async_start(ts, rdr, rp, s.read_timeout, cb) do
+      {:ok, async_pid, new_reader} ->
+        new_state = Map.put(s, :reader, new_reader) |> Map.put(:async_pid, async_pid)
+        {:reply, :ok, new_state}
+      {:error, _reason} = error ->
+        {:reply, error, s}
+    end
+  end
+
+  def handle_call([:read_async_start, cb], _from, %{transport: ts, reader: rdr} = s) do
+    # Create and use a read plan based on the current reader settings
+    rp = %ReadPlan{tag_protocol: rdr.tag_protocol, antennas: rdr.antennas}
+    case read_async_start(ts, rdr, rp, s.read_timeout, cb) do
+      {:ok, async_pid, new_reader} ->
+        new_state = Map.put(s, :reader, new_reader) |> Map.put(:async_pid, async_pid)
+        {:reply, :ok, new_state}
+      {:error, _reason} = error ->
+        {:reply, error, s}
+    end
+  end
+
+  def handle_call(:read_async_stop, _from, s) do
+    case Map.fetch(s, :async_pid) do
+      {:ok, task_pid} when not is_nil(task_pid) ->
+        stop = Task.async(fn ->
+          send(task_pid, {:stop, self()})
+          receive do
+            {:ok, :stopped} -> :ok
+          after 1000 ->
+            Process.unlink(task_pid)
+            Process.exit(task_pid, :kill)
+            {:error, :timeout}
+          end
+        end) |> Task.await
+        {:reply, stop, %{s | async_pid: nil}}
+      _ ->
+        {:reply, {:error, :not_started}, s}
+    end
+  end
+
   def handle_call([:set_read_timeout, timeout], _from, state) do
     {:reply, :ok, %{state | read_timeout: timeout}}
   end
@@ -405,68 +472,42 @@ defmodule TM.Mercury.Reader do
     case ReadPlan.validate(rp) do
       [errors: []] ->
         {:ok, new_reader} = prepare_read(ts, rdr, rp)
-
-        search_flags = [:configured_list, :large_tag_population_support]
-        op = [:read_tag_id_multiple, search_flags, timeout]
-
-        {:ok, cmd} = Command.build(rdr, op)
-
-        case Transport.send_data(ts, cmd) do
-          {:ok, _count} ->
-            flags = TM.Mercury.Tag.MetadataFlag.all
-            {:ok, tags} = execute(ts, rdr, [:get_tag_id_buffer, flags])
-            {:ok, tags, new_reader}
-          {:error, _reason} = err ->
-            err
-        end
+        {:ok, tags} = execute_read_sync(ts, new_reader, timeout)
+        # Return the reader in case any settings changed during prepare
+        {:ok, tags, new_reader}
       [errors: errors] ->
         {:error, errors}
     end
   end
 
-  # TODO: Fix async.  This is currently broken.
-  defp read_async_start(ts, rdr, %ReadPlan{} = rp, callback \\ nil) do
-    cb = callback || self()
+  defp read_async_start(ts, rdr, %ReadPlan{} = rp, timeout, callback) do
     # Validate the read plan
     case ReadPlan.validate(rp) do
-      [errors: []] -> :ok
-        {:ok, _new_reader} = prepare_read(ts, rdr, rp)
-
-        # TODO: Move to Command module.
-        # assemble the payload
-        payload = <<
-          0x00 :: uint16, # timout 0 for embedded read
-          0x01, # Option Byte (Continuious Read),
-          TM.Mercury.Protocol.Opcode.read_tag_id_multiple,
-          0x00 :: uint16, #Search Flags
-          TM.Mercury.Tag.Protocol.encode!(rp.tag_protocol),
-          0x7, 0x22, 0x10, 0x0, 0x1b, 0x0, 0xfa, 0x1, 0xff # This makes things work ¯\_(ツ)_/¯
-        >>
-        # Start the read
-        msg =
-          Opcode.multi_protocol_tag_op
-          |> Message.encode(payload)
-        case Transport.send_data(ts, msg) do
-          {:ok, _} ->
-            Transport.start_async(ts, cb)
-          error ->
-            error
-        end
+      [errors: []] ->
+        {:ok, new_reader} = prepare_read(ts, rdr, rp)
+        {:ok, task_pid} = Task.start_link(fn ->
+          pseudo_read_async_loop(ts, new_reader, callback, timeout)
+        end)
+        # Return the reader in case any settings changed during prepare
+        {:ok, task_pid, new_reader}
       [errors: errors] ->
         {:error, errors}
     end
   end
 
-  defp read_async_stop(ts) do
-    payload = <<0x0::16, 0x02>>
-    msg =
-      Opcode.multi_protocol_tag_op
-      |> Message.encode(payload)
-    case Transport.send_data(ts, msg) do
-      {:ok, _} ->
-        :ok
-      error ->
-        error
+  defp pseudo_read_async_loop(ts, rdr, cb, timeout) do
+    receive do
+      {:stop, from} ->
+        send(from, {:ok, :stopped})
+        {:shutdown, :stopped}
+      after 100 ->
+        case execute_read_sync(ts, rdr, timeout) do
+          {:error, :no_tags_found} -> :noop
+          {:ok, tags} ->
+            send(cb, {:tm_mercury, :tags, tags})
+            :ok = execute(ts, rdr, :clear_tag_id_buffer)
+        end
+        pseudo_read_async_loop(ts, rdr, cb, timeout)
     end
   end
 
@@ -496,6 +537,21 @@ defmodule TM.Mercury.Reader do
     {:ok, _} = execute(ts, rdr, [:get_reader_stats, :reset, :rf_on_time])
 
     {:ok, rdr}
+  end
+
+  defp execute_read_sync(ts, rdr, timeout) do
+    search_flags = [:configured_list, :large_tag_population_support]
+    op = [:read_tag_id_multiple, search_flags, timeout]
+
+    {:ok, cmd} = Command.build(rdr, op)
+
+    case Transport.send_data(ts, cmd) do
+      {:ok, _count} ->
+        flags = TM.Mercury.Tag.MetadataFlag.all
+        execute(ts, rdr, [:get_tag_id_buffer, flags])
+      {:error, _reason} = err ->
+        err
+    end
   end
 
   ## Helpers
