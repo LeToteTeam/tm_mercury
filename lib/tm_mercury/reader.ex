@@ -227,6 +227,10 @@ defmodule TM.Mercury.Reader do
     GenServer.call(pid, [:set_read_timeout, timeout])
   end
 
+  def status(pid) do
+    GenServer.call(pid, :status)
+  end
+
   # Server API
 
   @doc """
@@ -286,6 +290,7 @@ defmodule TM.Mercury.Reader do
           |> Map.put(:init, new_reader)
           |> Map.put(:reader, new_reader)
           |> Map.put(:transport, ts)
+          |> Map.put(:status, :disconnected)
 
         {:ok, state}
       error ->
@@ -296,19 +301,24 @@ defmodule TM.Mercury.Reader do
 
   def handle_info(:connected, state) do
     case initialize_reader(state) do
-      {:ok, rdr} -> {:noreply, Map.put(state, :reader, rdr)}
+      {:ok, rdr} ->
+        state = Map.put(state, :status, :connected)
+        |> Map.put(:reader, rdr)
+        {:noreply, state}
       _ -> {:noreply, state}
     end
   end
 
   def handle_call(:reboot, _from, state) do
     with :ok <- reboot_reader(state),
-      do: {:reply, :ok, state}
+                new_state = Map.put(state, :status, :disconnected),
+      do: {:reply, :ok, new_state}
   end
 
   def handle_call(:reconnect, _from, %{transport: ts} = s) do
+    new_state = Map.put(s, :status, :disconnected)
     resp = Transport.reopen(ts)
-    {:reply, resp, s}
+    {:reply, resp, new_state}
   end
 
   def handle_call(:boot_bootloader, _from, %{transport: ts, reader: rdr} = s) do
@@ -408,6 +418,10 @@ defmodule TM.Mercury.Reader do
 
   def handle_call([:set_read_timeout, timeout], _from, state) do
     {:reply, :ok, %{state | read_timeout: timeout}}
+  end
+
+  def handle_call(:status, from, %{status: status} = s) do
+    {:reply, status, s}
   end
 
   @doc """
