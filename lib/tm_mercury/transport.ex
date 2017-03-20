@@ -81,7 +81,7 @@ defmodule TM.Mercury.Transport do
   end
 
   def connect(info, %{uart: uart, device: device, opts: opts} = s) do
-    Logger.debug "Connecting to RFID reader at #{device}"
+    Logger.info "Connecting to RFID reader at #{device}"
 
     case info do
       {_, from} -> Connection.reply(from, :ok)
@@ -98,7 +98,7 @@ defmodule TM.Mercury.Transport do
   end
 
   def disconnect(info, %{uart: pid, device: device} = s) do
-    Logger.debug "Disconnecting from RFID reader at #{device}"
+    Logger.info "Disconnecting from RFID reader at #{device}"
     _ = Nerves.UART.drain(pid)
     :ok = Nerves.UART.close(pid)
 
