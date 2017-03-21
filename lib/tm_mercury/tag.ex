@@ -30,8 +30,8 @@ defmodule TM.Mercury.Tag do
   end
 
   def parse_antenna_id(data, 0), do: data
-  def parse_antenna_id({<<antenna, tail :: binary>>, result}, _) do
-    {tail, Keyword.put(result, :antenna_id, antenna)}
+  def parse_antenna_id({<<tx::4, rx::4, tail :: binary>>, result}, _) do
+    {tail, Keyword.put(result, :antenna_id, [tx: tx, rx: rx])}
   end
 
   def parse_frequency(data, 0), do: data
