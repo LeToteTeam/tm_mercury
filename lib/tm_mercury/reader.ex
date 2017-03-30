@@ -544,7 +544,7 @@ defmodule TM.Mercury.Reader do
   defp handle_read_async_start(callback, %ReadPlan{} = rp, %{transport: ts, reader: rdr} = state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when not is_nil(pid) ->
-        {:reply, {:error, :already_started}, state}
+        {:reply, {:error, {:already_started, pid}}, state}
       _ ->
         case execute_read_async_start(ts, rdr, callback, rp) do
           {:ok, async_pid, new_reader} ->
