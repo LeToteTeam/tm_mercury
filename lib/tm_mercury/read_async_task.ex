@@ -12,13 +12,13 @@ defmodule TM.Mercury.ReadAsyncTask do
 
   defp loop(state) do
     receive do
+      {:stop, from} ->
+        send(from, :stopped)
+        {:shutdown, :stopped}
       :suspend ->
         loop(%{state | status: :suspended})
       :resume ->
         loop(%{state | status: :running})
-      {:stop, from} ->
-        send(from, :stopped)
-        {:shutdown, :stopped}
       after
         100 -> loop(dispatch(state))
     end
