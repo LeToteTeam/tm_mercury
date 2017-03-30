@@ -104,6 +104,8 @@ defmodule TM.Mercury.Transport do
 
     s = %{s | connection: :disconnected}
 
+    send(s.owner, :disconnected)
+
     case info do
       {:close, from} ->
         # Close and expect caller to re-open later
