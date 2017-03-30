@@ -542,12 +542,17 @@ defmodule TM.Mercury.Reader do
 
   # Common callback for multiple read_async_start handle_call's
   defp handle_read_async_start(callback, %ReadPlan{} = rp, %{transport: ts, reader: rdr} = state) do
-    case execute_read_async_start(ts, rdr, callback, rp) do
-      {:ok, async_pid, new_reader} ->
-        new_state = state |> Map.put(:reader, new_reader) |> Map.put(:async_pid, async_pid)
-        {:reply, :ok, new_state}
-      {:error, _reason} = error ->
-        {:reply, error, state}
+    case Map.fetch(state, :async_pid) do
+      {:ok, pid} when not is_nil(pid) ->
+        {:reply, {:error, :already_started}, state}
+      _ ->
+        case execute_read_async_start(ts, rdr, callback, rp) do
+          {:ok, async_pid, new_reader} ->
+            new_state = state |> Map.put(:reader, new_reader) |> Map.put(:async_pid, async_pid)
+            {:reply, :ok, new_state}
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
     end
   end
 
