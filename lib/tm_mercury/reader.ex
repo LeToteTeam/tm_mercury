@@ -366,55 +366,37 @@ defmodule TM.Mercury.Reader do
     end)
   end
 
-  def handle_call([:read_sync, %ReadPlan{} = rp], _from, %{transport: ts, reader: rdr} = s) do
-    case read_sync(ts, rdr, rp, s.read_timeout) do
-      {:ok, tags, new_reader} ->
-        {:reply, {:ok, tags}, %{s | reader: new_reader}}
-      {:error, _reason} = error ->
-        {:reply, error, s}
-    end
+  def handle_call([:read_sync, %ReadPlan{} = rp], _from, state) do
+    handle_read_sync(rp, state)
   end
 
-  def handle_call(:read_sync, _from, %{transport: ts, reader: rdr} = s) do
+  def handle_call(:read_sync, _from, %{reader: rdr} = state) do
     # Create and use a read plan based on the current reader settings
     rp = %ReadPlan{tag_protocol: rdr.tag_protocol, antennas: rdr.antennas}
-    case read_sync(ts, rdr, rp, s.read_timeout) do
-      {:ok, tags, _} ->
-        {:reply, {:ok, tags}, s}
-      {:error, _reason} = error ->
-        {:reply, error, s}
-    end
+    handle_read_sync(rp, state)
   end
 
-  def handle_call([:read_async_start, cb, %ReadPlan{} = rp], _from, %{transport: ts, reader: rdr} = s) do
+  def handle_call([:read_async_start, cb, %ReadPlan{} = rp], _from, state) do
     # Pseudo-async until we implement true continuous reading
     # Use the provided read plan
-    case read_async_start(ts, rdr, cb, rp) do
-      {:ok, async_pid, new_reader} ->
-        new_state = Map.put(s, :reader, new_reader) |> Map.put(:async_pid, async_pid)
-        {:reply, :ok, new_state}
-      {:error, _reason} = error ->
-        {:reply, error, s}
-    end
+    handle_read_async_start(cb, rp, state)
   end
 
-  def handle_call([:read_async_start, cb], _from, %{transport: ts, reader: rdr} = s) do
+  def handle_call([:read_async_start, cb], _from, %{reader: rdr} = state) do
     # Pseudo-async until we implement true continuous reading
     # Create and use a read plan based on the current reader settings
     rp = %ReadPlan{tag_protocol: rdr.tag_protocol, antennas: rdr.antennas}
-    case read_async_start(ts, rdr, cb, rp) do
-      {:ok, async_pid, new_reader} ->
-        new_state = Map.put(s, :reader, new_reader) |> Map.put(:async_pid, async_pid)
-        {:reply, :ok, new_state}
-      {:error, _reason} = error ->
-        {:reply, error, s}
-    end
+    handle_read_async_start(cb, rp, state)
   end
 
   def handle_call(:read_async_stop, _from, state) do
-    async_pid = Map.fetch(state, :async_pid)
-    stop_result = execute_read_async_stop(async_pid, 1000)
-    {:reply, stop_result, %{state | async_pid: nil}}
+    case Map.fetch(state, :async_pid) do
+      {:ok, pid} when is_pid(pid) ->
+        stop_result = execute_read_async_stop(pid, 1000)
+        {:reply, stop_result, %{state | async_pid: nil}}
+      _ ->
+        {:reply, {:error, :not_started}, state}
+    end
   end
 
 
@@ -483,6 +465,16 @@ defmodule TM.Mercury.Reader do
     end
   end
 
+  # Common callback for multiple read_sync handle_call's
+  defp handle_read_sync(rp, %{transport: ts, reader: rdr, read_timeout: timeout} = state) do
+    case read_sync(ts, rdr, rp, timeout) do
+      {:ok, tags, new_reader} ->
+        {:reply, {:ok, tags}, %{state | reader: new_reader}}
+      {:error, _reason} = error ->
+        {:reply, error, state}
+    end
+  end
+
   defp read_sync(ts, rdr, %ReadPlan{} = rp, timeout) do
     # Validate the read plan
     case ReadPlan.validate(rp) do
@@ -548,7 +540,18 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  defp read_async_start(ts, rdr, callback, %ReadPlan{} = rp) do
+  # Common callback for multiple read_async_start handle_call's
+  defp handle_read_async_start(callback, %ReadPlan{} = rp, %{transport: ts, reader: rdr} = state) do
+    case execute_read_async_start(ts, rdr, callback, rp) do
+      {:ok, async_pid, new_reader} ->
+        new_state = state |> Map.put(:reader, new_reader) |> Map.put(:async_pid, async_pid)
+        {:reply, :ok, new_state}
+      {:error, _reason} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp execute_read_async_start(ts, rdr, callback, %ReadPlan{} = rp) do
     # Validate the read plan
     case ReadPlan.validate(rp) do
       [errors: []] ->
@@ -561,8 +564,7 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  defp execute_read_async_stop(:error, _timeout), do: {:error, :not_started}
-  defp execute_read_async_stop({:ok, async_pid}, timeout) do
+  defp execute_read_async_stop(async_pid, timeout) do
     stop = Task.async(fn ->
       send(async_pid, {:stop, self()})
       receive do
