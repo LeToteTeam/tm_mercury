@@ -2,13 +2,13 @@ defmodule TM.Mercury.Reader do
   use GenServer
   require Logger
 
-  @default_opts power_mode: :full, region: :na, antennas: 1,
-                tag_protocol: :gen2, read_timeout: 500
-  @ts_opt_keys [:device, :speed, :timeout, :framing]
+  alias TM.Mercury.{Transport, ReadPlan, ReadAsyncTask, Protocol.Command}
 
-  alias __MODULE__
-  alias TM.Mercury.{Transport, ReadPlan, ReadAsyncTask}
-  alias TM.Mercury.Protocol.Command
+  @default_opts power_mode: :full,
+    region: :na,
+    antennas: 1,
+    tag_protocol: :gen2,
+    read_timeout: 500
 
   defstruct [:model, :power_mode, :region, :tag_protocol, :antennas]
 
@@ -278,11 +278,13 @@ defmodule TM.Mercury.Reader do
     Logger.debug "Starting RFID reader process for #{device} with pid #{inspect self()}"
 
     opts = Keyword.merge(@default_opts, opts)
-    ts_opts = Keyword.take(opts, @ts_opt_keys)
+
+    # Pass this subset of options along to the transport process
+    ts_opts = Keyword.take(opts, [:device, :speed, :timeout, :framing])
 
     case Connection.start_link(Transport, {self(), ts_opts}) do
       {:ok, ts} ->
-        new_reader = struct(%Reader{}, opts)
+        new_reader = struct(%__MODULE__{}, opts)
 
         state =
           Map.new(opts)
@@ -606,9 +608,9 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  defp execute(ts, %Reader{} = rdr, cmd) when is_atom(cmd),
+  defp execute(ts, %__MODULE__{} = rdr, cmd) when is_atom(cmd),
     do: execute(ts, rdr, [cmd])
-  defp execute(ts, %Reader{} = rdr, [_key|_args] = cmd) do
+  defp execute(ts, %__MODULE__{} = rdr, [_key|_args] = cmd) do
     Command.build(rdr, cmd)
     |> send_command(ts)
   end
