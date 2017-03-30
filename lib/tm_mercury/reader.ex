@@ -73,7 +73,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  TODO: Docs
+  Return the tags that have accumulated in the reader's buffer while waiting on a synchronous read timeout to expire.
   """
   @spec get_tag_id_buffer(pid, list) :: {:ok, term} | {:error, term}
   def get_tag_id_buffer(pid, metadata_flags) do
@@ -110,7 +110,6 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  TODO
   Set the power-consumption mode of the reader as a whole
   """
   def get_power_mode(pid) do
@@ -162,7 +161,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  TODO
+  Return the current value of an optional reader parameter with a given key.
   """
   @spec get_param(pid, atom) :: {:ok, term} | {:error, term}
   def get_param(pid, key) do
@@ -170,7 +169,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  TODO
+  Set the value of an optional reader parameter with a given key.
   """
   @spec set_param(pid, atom, any) :: {:ok, term} | {:error, term}
   def set_param(pid, key, value) do
@@ -225,6 +224,9 @@ defmodule TM.Mercury.Reader do
     GenServer.call(pid, [:set_read_timeout, timeout])
   end
 
+  @doc """
+  Return the reader's transport connection status
+  """
   def status(pid) do
     GenServer.call(pid, :status)
   end
@@ -298,6 +300,8 @@ defmodule TM.Mercury.Reader do
     end
   end
 
+  # handle_info callbacks
+
   def handle_info(:connected, state) do
     Logger.info("Reader connected")
     case initialize_reader(state) do
@@ -315,12 +319,16 @@ defmodule TM.Mercury.Reader do
     {:noreply, %{state | status: :disconnected}}
   end
 
+  # Helpers for handle_info callbacks
+
   defp send_to_async_task(msg, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when not is_nil(pid) -> send(pid, msg)
       _ -> :noop
     end
   end
+
+  # handle_call callbacks
 
   def handle_call(:reboot, _from, state) do
     with :ok <- reboot_reader(state),
@@ -399,7 +407,6 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-
   def handle_call([:set_read_timeout, timeout], _from, state) do
     {:reply, :ok, %{state | read_timeout: timeout}}
   end
@@ -418,6 +425,34 @@ defmodule TM.Mercury.Reader do
   def handle_call(cmd, _from, %{transport: ts, reader: rdr} = s) when is_atom(cmd) do
     resp = execute(ts, rdr, [cmd])
     {:reply, resp, s}
+  end
+
+  # Helpers for handle_call callbacks
+
+  # Common handler for multiple read_sync callbacks
+  defp handle_read_sync(rp, %{transport: ts, reader: rdr, read_timeout: timeout} = state) do
+    case read_sync(ts, rdr, rp, timeout) do
+      {:ok, tags, new_reader} ->
+        {:reply, {:ok, tags}, %{state | reader: new_reader}}
+      {:error, _reason} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  # Common handler for multiple read_async_start callbacks
+  defp handle_read_async_start(callback, %ReadPlan{} = rp, %{transport: ts, reader: rdr} = state) do
+    case Map.fetch(state, :async_pid) do
+      {:ok, pid} when not is_nil(pid) ->
+        {:reply, {:error, {:already_started, pid}}, state}
+      _ ->
+        case execute_read_async_start(ts, rdr, callback, rp) do
+          {:ok, async_pid, new_reader} ->
+            new_state = state |> Map.put(:reader, new_reader) |> Map.put(:async_pid, async_pid)
+            {:reply, :ok, new_state}
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
+    end
   end
 
   defp initialize_reader(%{transport: ts, init: rdr}) do
@@ -465,32 +500,6 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  # Common callback for multiple read_sync handle_call's
-  defp handle_read_sync(rp, %{transport: ts, reader: rdr, read_timeout: timeout} = state) do
-    case read_sync(ts, rdr, rp, timeout) do
-      {:ok, tags, new_reader} ->
-        {:reply, {:ok, tags}, %{state | reader: new_reader}}
-      {:error, _reason} = error ->
-        {:reply, error, state}
-    end
-  end
-
-  defp read_sync(ts, rdr, %ReadPlan{} = rp, timeout) do
-    # Validate the read plan
-    case ReadPlan.validate(rp) do
-      [errors: []] ->
-        {:ok, new_reader} = prepare_read(ts, rdr, rp)
-        tags = case execute_read_sync(ts, new_reader, timeout) do
-          {:ok, tags} -> tags
-          {:error, _} -> []
-        end
-        # Return the reader in case any settings changed during prepare
-        {:ok, tags, new_reader}
-      [errors: errors] ->
-        {:error, errors}
-    end
-  end
-
   defp prepare_read(ts, rdr, %ReadPlan{} = rp) do
     # First verify the protocol
     rdr = if rp.tag_protocol != rdr.tag_protocol do
@@ -519,6 +528,21 @@ defmodule TM.Mercury.Reader do
     {:ok, rdr}
   end
 
+  defp read_sync(ts, rdr, %ReadPlan{} = rp, timeout) do
+    case ReadPlan.validate(rp) do
+      [errors: []] ->
+        {:ok, new_reader} = prepare_read(ts, rdr, rp)
+        tags = case execute_read_sync(ts, new_reader, timeout) do
+          {:ok, tags} -> tags
+          {:error, _} -> []
+        end
+        # Return the reader in case any settings changed during prepare
+        {:ok, tags, new_reader}
+      [errors: errors] ->
+        {:error, errors}
+    end
+  end
+
   defp execute_read_sync(ts, rdr, timeout) do
     search_flags = [:configured_list, :large_tag_population_support]
     op = [:read_tag_id_multiple, search_flags, timeout]
@@ -537,22 +561,6 @@ defmodule TM.Mercury.Reader do
       :exit, {:timeout, _} ->
         Logger.warn("Timed out waiting for transport to fulfill send_data call")
         {:error, :timeout}
-    end
-  end
-
-  # Common callback for multiple read_async_start handle_call's
-  defp handle_read_async_start(callback, %ReadPlan{} = rp, %{transport: ts, reader: rdr} = state) do
-    case Map.fetch(state, :async_pid) do
-      {:ok, pid} when not is_nil(pid) ->
-        {:reply, {:error, {:already_started, pid}}, state}
-      _ ->
-        case execute_read_async_start(ts, rdr, callback, rp) do
-          {:ok, async_pid, new_reader} ->
-            new_state = state |> Map.put(:reader, new_reader) |> Map.put(:async_pid, async_pid)
-            {:reply, :ok, new_state}
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
     end
   end
 
@@ -586,7 +594,7 @@ defmodule TM.Mercury.Reader do
     end
   end
 
-  ## Helpers
+  # Generic command helpers
 
   defp exec_command_bind_reader_state(ts, rdr, cmd, state, reader_state_func) do
     case execute(ts, rdr, cmd) do
