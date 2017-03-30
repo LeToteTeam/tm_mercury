@@ -557,7 +557,6 @@ defmodule TM.Mercury.Reader do
   end
 
   defp execute_read_async_start(ts, rdr, callback, %ReadPlan{} = rp) do
-    # Validate the read plan
     case ReadPlan.validate(rp) do
       [errors: []] ->
         {:ok, new_reader} = prepare_read(ts, rdr, rp)
