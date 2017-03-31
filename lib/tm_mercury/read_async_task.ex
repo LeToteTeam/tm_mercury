@@ -2,12 +2,10 @@ defmodule TM.Mercury.ReadAsyncTask do
   require Logger
   alias TM.Mercury.Reader
 
-  def start_link(reader_pid, callback, plan) do
+  def start_link(reader_pid, callback) do
     loop(%{status: :running,
            reader: reader_pid,
-           cb: callback,
-           plan: plan,
-           tag_count: 0})
+           cb: callback})
   end
 
   defp loop(state) do
@@ -24,9 +22,9 @@ defmodule TM.Mercury.ReadAsyncTask do
     end
   end
 
-  defp dispatch(%{status: :running, reader: rdr, cb: cb, plan: plan} = state) do
+  defp dispatch(%{status: :running, reader: rdr, cb: cb} = state) do
     try do
-      case Reader.read_sync(rdr, plan) do
+      case Reader.read_sync_prepared(rdr) do
         {:ok, tags} when length(tags) == 0 -> state
         {:ok, tags} when length(tags) > 0 ->
           send(cb, {:tm_mercury, :tags, tags})

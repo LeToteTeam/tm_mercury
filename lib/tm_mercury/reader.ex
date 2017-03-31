@@ -193,6 +193,14 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
+  Read tags synchronously using the current reader configuration, skipping preparation steps in `prepare_read`.
+  Care should be taken that any necessary preparation is performed separately before calling this function.
+  """
+  def read_sync_prepared(pid) do
+    GenServer.call(pid, :read_sync_prepared)
+  end
+
+  @doc """
   Start reading tags asynchronously using the current reader configuration
   Tags will be sent to the process provided as the callback until `stop_read_async` is called.
   """
@@ -386,6 +394,15 @@ defmodule TM.Mercury.Reader do
     handle_read_sync(rp, state)
   end
 
+  def handle_call(:read_sync_prepared, _from, %{transport: ts, reader: rdr, read_timeout: timeout} = state) do
+    case execute_read_sync(ts, rdr, timeout) do
+      {:error, :no_tags_found} ->
+        {:reply, {:ok, []}, state}
+      other ->
+        {:reply, other, state}
+    end
+  end
+
   def handle_call([:read_async_start, cb, %ReadPlan{} = rp], _from, state) do
     # Pseudo-async until we implement true continuous reading
     # Use the provided read plan
@@ -570,7 +587,7 @@ defmodule TM.Mercury.Reader do
     case ReadPlan.validate(rp) do
       [errors: []] ->
         {:ok, new_reader} = prepare_read(ts, rdr, rp)
-        {:ok, task_pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), callback, rp])
+        {:ok, task_pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), callback])
         # Return the reader in case any settings changed during prepare
         {:ok, task_pid, new_reader}
       [errors: errors] ->
