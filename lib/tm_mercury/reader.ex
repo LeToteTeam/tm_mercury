@@ -196,6 +196,7 @@ defmodule TM.Mercury.Reader do
   Read tags synchronously using the current reader configuration, skipping preparation steps in `prepare_read`.
   Care should be taken that any necessary preparation is performed separately before calling this function.
   """
+  @spec read_sync(pid) :: {:ok, term} | {:error, term}
   def read_sync_prepared(pid) do
     GenServer.call(pid, :read_sync_prepared)
   end
