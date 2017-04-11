@@ -479,6 +479,8 @@ defmodule TM.Mercury.Reader do
     with {:ok, version} <- execute(ts, rdr, :version),
          # Pick up the model first for any downstream encoding/decoding that needs it
          reader = Map.put(rdr, :model, version.model),
+         # Send CRC regardless of transport mode
+         :ok <- execute(ts, reader, [:set_reader_optional_params, :send_crc, true]),
          :ok <- execute(ts, reader, [:set_region, reader.region]),
          :ok <- execute(ts, reader, [:set_power_mode, reader.power_mode]),
          :ok <- execute(ts, reader, [:set_tag_protocol, reader.tag_protocol]),
