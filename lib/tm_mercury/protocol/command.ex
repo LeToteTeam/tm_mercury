@@ -51,6 +51,10 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code)}
   end
 
+  defp build_command(_rdr, {:get_read_tx_power, code}, []) do
+    {:ok, Message.encode(code)}
+  end
+
   defp build_command(_rdr, {:get_tag_protocol, code}, []) do
     {:ok, Message.encode(code)}
   end
