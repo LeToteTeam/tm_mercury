@@ -55,6 +55,10 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code)}
   end
 
+  defp build_command(_rdr, {:set_read_tx_power, code}, [level]) do
+    {:ok, Message.encode(code, <<level :: uint16>>)}
+  end
+
   defp build_command(_rdr, {:get_tag_protocol, code}, []) do
     {:ok, Message.encode(code)}
   end
