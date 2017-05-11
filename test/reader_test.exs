@@ -1,6 +1,5 @@
 defmodule TM.Mercury.ReaderTest do
   use ExUnit.Case, async: false
-  doctest TM.Mercury.Reader
 
   alias TM.Mercury.{Reader, ReadPlan}
 
@@ -25,5 +24,17 @@ defmodule TM.Mercury.ReaderTest do
     assert_receive {:tm_mercury, :tags, _}, 1000
     Reader.read_async_stop(context.pid)
   end
-end
 
+  test "Reader changes power level", context do
+    {:ok, initial_cdbm} = Reader.get_read_tx_power(context.pid)
+    change_to_cdbm = min(initial_cdbm + 100, 3000)
+
+    :ok = Reader.set_read_tx_power(context.pid, change_to_cdbm)
+    {:ok, changed_cdbm} = Reader.get_read_tx_power(context.pid)
+
+    # Set power level back before asserting, assuming the op is functioning correctly.
+    Reader.set_read_tx_power(context.pid, initial_cdbm)
+
+    assert changed_cdbm == change_to_cdbm
+  end
+end
