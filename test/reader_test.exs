@@ -27,7 +27,12 @@ defmodule TM.Mercury.ReaderTest do
 
   test "Reader changes power level", context do
     {:ok, initial_cdbm} = Reader.get_read_tx_power(context.pid)
-    change_to_cdbm = min(initial_cdbm + 100, 3000)
+
+    max_power_cdbm = 3000
+    change_to_cdbm = case initial_cdbm do
+      ^max_power_cdbm -> 2000
+      _ -> min(initial_cdbm + 100, max_power_cdbm)
+    end
 
     :ok = Reader.set_read_tx_power(context.pid, change_to_cdbm)
     {:ok, changed_cdbm} = Reader.get_read_tx_power(context.pid)
