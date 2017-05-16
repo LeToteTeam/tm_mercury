@@ -25,5 +25,10 @@ defmodule TM.Mercury.ReaderTest do
     assert_receive {:tm_mercury, :tags, _}, 1000
     Reader.read_async_stop(context.pid)
   end
+
+  test "Reader returns a valid temperature", context do
+    {:ok, temp_c} = Reader.get_temperature(context.pid)
+    assert temp_c > 0
+  end
 end
 
