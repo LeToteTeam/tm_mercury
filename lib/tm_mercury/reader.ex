@@ -117,6 +117,32 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
+  Get the current TX power for reading tags in centi-dBm.
+
+  ## Examples
+
+      iex> TM.Mercury.Reader.get_read_tx_power(pid)
+      {:ok, 2500} # 25 dBm
+
+  """
+  def get_read_tx_power(pid) do
+    GenServer.call(pid, :get_read_tx_power)
+  end
+
+  @doc """
+  Set the current TX power for reading tags in centi-dBm.
+
+  ## Examples
+
+      iex> TM.Mercury.Reader.set_read_tx_power(pid, 2500) # 25 dBm
+      :ok
+
+  """
+  def set_read_tx_power(pid, level) do
+    GenServer.call(pid, [:set_read_tx_power, level])
+  end
+
+  @doc """
   Set the tag protocol used by the reader
   """
   def set_tag_protocol(pid, protocol) do

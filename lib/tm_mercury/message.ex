@@ -41,6 +41,11 @@ defmodule TM.Mercury.Message do
     Map.put(msg, :data, mode)
   end
 
+  def decode(%Message{opcode: :get_read_tx_power} = msg) do
+    <<power :: uint16>> = msg.data
+    Map.put(msg, :data, power)
+  end
+
   def decode(%Message{opcode: :get_region} = msg) do
     <<region :: uint8>> = msg.data
     data = TM.Mercury.Protocol.Region.decode!(region)
