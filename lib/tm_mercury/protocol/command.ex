@@ -43,6 +43,13 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code, <<region>>)}
   end
 
+  # TODO: Collapse all these functions returning {:ok, Message.encode(code)} into a default catch-all handler
+  # for simple commands that don't have any additional encoding requirements
+
+  defp build_command(_rdr, {:get_temperature, code}, []) do
+    {:ok, Message.encode(code)}
+  end
+
   defp build_command(_rdr, {:get_current_program, code}, []) do
     {:ok, Message.encode(code)}
   end

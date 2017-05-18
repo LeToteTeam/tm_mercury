@@ -25,6 +25,11 @@ defmodule TM.Mercury.ReaderTest do
     Reader.read_async_stop(context.pid)
   end
 
+  test "Reader returns a valid temperature", context do
+    {:ok, temp_c} = Reader.get_temperature(context.pid)
+    assert temp_c > 0
+  end
+  
   test "Reader changes power level", context do
     {:ok, initial_cdbm} = Reader.get_read_tx_power(context.pid)
 
@@ -41,5 +46,5 @@ defmodule TM.Mercury.ReaderTest do
     Reader.set_read_tx_power(context.pid, initial_cdbm)
 
     assert changed_cdbm == change_to_cdbm
-  end
+  end  
 end

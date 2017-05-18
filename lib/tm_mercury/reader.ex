@@ -157,6 +157,13 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
+  Get the radio's temperature
+  """
+  def get_temperature(pid) do
+    GenServer.call(pid, :get_temperature)
+  end
+
+  @doc """
   Return the antenna port configuration used by the reader
   """
   def get_antenna_port(pid) do

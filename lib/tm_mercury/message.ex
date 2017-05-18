@@ -109,6 +109,14 @@ defmodule TM.Mercury.Message do
     Map.put(msg, :data, app)
   end
 
+  @doc """
+  Catch-all decoder for 1 byte data payloads
+  """
+  def decode(%{data: data} = msg) when is_binary(data) and byte_size(data) == 1 do
+    <<result :: uint8>> = data
+    Map.put(msg, :data, result)
+  end
+
   def decode(msg), do: msg
 
   def decode_protocols(mask), do: decode_protocols(mask, 32, 0, [])
