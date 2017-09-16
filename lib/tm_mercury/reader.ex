@@ -1,5 +1,8 @@
 defmodule TM.Mercury.Reader do
   use GenServer
+
+  @type error :: {:error, term}
+
   require Logger
 
   alias TM.Mercury.{Transport, ReadPlan, ReadAsyncTask, Protocol.Command}
@@ -15,9 +18,11 @@ defmodule TM.Mercury.Reader do
   # Client API
 
   @doc """
-  Disconnect the reader.  The connection will be restarted.
+  Disconnect the reader.
+
+  The connection will be restarted.
   """
-  @spec reconnect(pid) :: :ok | {:error, term}
+  @spec reconnect(pid) :: :ok | error
   def reconnect(pid) do
     GenServer.call(pid, :reconnect)
   end
@@ -25,7 +30,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Execute the reader's bootloader.
   """
-  @spec boot_bootloader(pid) :: :ok | {:error, term}
+  @spec boot_bootloader(pid) :: :ok | error
   def boot_bootloader(pid) do
     GenServer.call(pid, :boot_bootloader)
   end
@@ -33,7 +38,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Execute the reader's firmware from the bootloader.
   """
-  @spec boot_firmware(pid) :: :ok | {:error, term}
+  @spec boot_firmware(pid) :: :ok | error
   def boot_firmware(pid) do
     GenServer.call(pid, :boot_firmware)
   end
@@ -41,7 +46,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Reboot the reader.
   """
-  @spec reboot(pid) :: :ok | {:error, term}
+  @spec reboot(pid) :: :ok | error
   def reboot(pid) do
     GenServer.call(pid, :reboot)
   end
@@ -57,25 +62,26 @@ defmodule TM.Mercury.Reader do
   @doc """
   Return the identity of the program currently running on the device.
   """
-  @spec get_current_program(pid) ::
-    {:ok, :bootloader} | {:ok, :application} | {:error, term}
+  @spec get_current_program(pid) :: {:ok, atom} | error
   def get_current_program(pid) do
     GenServer.call(pid, :get_current_program)
   end
 
   @doc """
   Set the reader's serial baud rate.
+
   The host's baud rate must be changed separately.
   """
-  @spec set_baud_rate(pid, pos_integer) :: :ok | {:error, term}
+  @spec set_baud_rate(pid, pos_integer) :: :ok | error
   def set_baud_rate(pid, rate) do
     GenServer.call(pid, [:set_baud_rate, rate])
   end
 
   @doc """
-  Return the tags that have accumulated in the reader's buffer while waiting on a synchronous read timeout to expire.
+  Return the tags that have accumulated in the reader's buffer
+  while waiting on a synchronous read timeout to expire.
   """
-  @spec get_tag_id_buffer(pid, list) :: {:ok, term} | {:error, term}
+  @spec get_tag_id_buffer(pid, list) :: {:ok, term} | error
   def get_tag_id_buffer(pid, metadata_flags) do
     GenServer.call(pid, [:get_tag_id_buffer, metadata_flags])
   end
@@ -83,7 +89,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Clear the tag buffer.
   """
-  @spec clear_tag_id_buffer(pid) :: :ok | {:error, term}
+  @spec clear_tag_id_buffer(pid) :: :ok | error
   def clear_tag_id_buffer(pid) do
     GenServer.call(pid, :clear_tag_id_buffer)
   end
@@ -91,6 +97,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Set the RF regulatory environment that the reader will operate within.
   """
+  @spec set_region(pid, atom) :: :ok | error
   def set_region(pid, region) do
     GenServer.call(pid, [:set_region, region])
   end
@@ -98,20 +105,25 @@ defmodule TM.Mercury.Reader do
   @doc """
   Return the RF regulatory environment that the reader will operate within.
   """
+  @spec get_region(pid) :: {:ok, atom} | error
   def get_region(pid) do
     GenServer.call(pid, :get_region)
   end
 
   @doc """
-  Return the power-consumption mode of the reader as a whole
+  Set the power-consumption mode of the reader.
   """
+  @spec set_power_mode(pid, atom) :: :ok | error
   def set_power_mode(pid, mode) do
     GenServer.call(pid, [:set_power_mode, mode])
   end
 
   @doc """
-  Set the power-consumption mode of the reader as a whole
+  Get the power-consumption mode of the reader.
+
+  This is not related to the TX/RX power.
   """
+  @spec get_power_mode(pid) :: {:ok, atom} | error
   def get_power_mode(pid) do
     GenServer.call(pid, :get_power_mode)
   end
@@ -125,6 +137,7 @@ defmodule TM.Mercury.Reader do
       {:ok, 2500} # 25 dBm
 
   """
+  @spec get_read_tx_power(pid) :: {:ok, number} | error
   def get_read_tx_power(pid) do
     GenServer.call(pid, :get_read_tx_power)
   end
@@ -138,6 +151,7 @@ defmodule TM.Mercury.Reader do
       :ok
 
   """
+  @spec set_read_tx_power(pid, number) :: :ok | error
   def set_read_tx_power(pid, level) do
     GenServer.call(pid, [:set_read_tx_power, level])
   end
@@ -145,6 +159,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Set the tag protocol used by the reader
   """
+  @spec set_tag_protocol(pid, atom) :: :ok | error
   def set_tag_protocol(pid, protocol) do
     GenServer.call(pid, [:set_tag_protocol, protocol])
   end
@@ -152,6 +167,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Return the tag protocol used by the reader
   """
+  @spec get_tag_protocol(pid) :: {:ok, atom} | error
   def get_tag_protocol(pid) do
     GenServer.call(pid, :get_tag_protocol)
   end
@@ -159,6 +175,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Get the radio's temperature
   """
+  @spec get_temperature(pid) :: {:ok, number} | error
   def get_temperature(pid) do
     GenServer.call(pid, :get_temperature)
   end
@@ -196,7 +213,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Return the current value of an optional reader parameter with a given key.
   """
-  @spec get_param(pid, atom) :: {:ok, term} | {:error, term}
+  @spec get_param(pid, atom) :: {:ok, term} | error
   def get_param(pid, key) do
     GenServer.call(pid, [:get_reader_optional_params, key])
   end
@@ -204,7 +221,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Set the value of an optional reader parameter with a given key.
   """
-  @spec set_param(pid, atom, any) :: {:ok, term} | {:error, term}
+  @spec set_param(pid, atom, term) :: {:ok, term} | error
   def set_param(pid, key, value) do
     GenServer.call(pid, [:set_reader_optional_params, key, value])
   end
@@ -212,7 +229,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Read tags synchronously using the current reader configuration
   """
-  @spec read_sync(pid) :: {:ok, term} | {:error, term}
+  @spec read_sync(pid) :: {:ok, term} | error
   def read_sync(pid) do
     GenServer.call(pid, :read_sync)
   end
@@ -220,16 +237,16 @@ defmodule TM.Mercury.Reader do
   @doc """
   Read tags synchronously using a custom read plan
   """
-  @spec read_sync(pid, ReadPlan.t) :: {:ok, term} | {:error, term}
+  @spec read_sync(pid, ReadPlan.t) :: {:ok, term} | error
   def read_sync(pid, %ReadPlan{} = rp) do
     GenServer.call(pid, [:read_sync, rp])
   end
 
   @doc """
   Read tags synchronously using the current reader configuration, skipping preparation steps in `prepare_read`.
-  Care should be taken that any necessary preparation is performed separately before calling this function.
+  Care should be taken that preparation is performed separately before calling this function.
   """
-  @spec read_sync(pid) :: {:ok, term} | {:error, term}
+  @spec read_sync(pid) :: {:ok, term} | error
   def read_sync_prepared(pid) do
     GenServer.call(pid, :read_sync_prepared)
   end
@@ -238,7 +255,7 @@ defmodule TM.Mercury.Reader do
   Start reading tags asynchronously using the current reader configuration
   Tags will be sent to the process provided as the callback until `stop_read_async` is called.
   """
-  @spec read_async_start(pid :: pid, callback :: pid) :: {:ok, term} | {:error, term}
+  @spec read_async_start(pid :: pid, callback :: pid) :: {:ok, term} | error
   def read_async_start(pid, callback) do
     GenServer.call(pid, [:read_async_start, callback])
   end
@@ -247,7 +264,7 @@ defmodule TM.Mercury.Reader do
   Start reading tags asynchronously using a custom read plan
   Tags will be sent to the process provided as the callback until `stop_read_async` is called.
   """
-  @spec read_async_start(pid :: pid, callback :: pid, ReadPlan.t) :: {:ok, term} | {:error, term}
+  @spec read_async_start(pid :: pid, callback :: pid, ReadPlan.t) :: {:ok, term} | error
   def read_async_start(pid, callback, %ReadPlan{} = rp) do
     GenServer.call(pid, [:read_async_start, callback, rp])
   end
@@ -262,6 +279,7 @@ defmodule TM.Mercury.Reader do
   @doc """
   Change the read timeout used for synchronous tag reading.
   """
+  @spec set_read_timeout(pid, number) :: :ok | error
   def set_read_timeout(pid, timeout) do
     GenServer.call(pid, [:set_read_timeout, timeout])
   end
@@ -279,37 +297,43 @@ defmodule TM.Mercury.Reader do
   Start a process and open a connection
   with the reader over UART connected via TTL / USB
 
-  Keyword List Parameters
-  * `device` - The device file for the reader serial connection (required)
-  * `speed` - The port speed, e.g.: `speed: 115200` (default)
-  * `region` - The regulatory RF environment used by the reader
-    * `:none` - Unspecified region (default)
-    * `:na` - North America
-    * `:eu` - European Union
-    * `:kr` - Korea
-    * `:in` - India
-    * `:jp` - Japan
-    * `:prc` - People's Republic of China
-    * `:eu2` - European Union 2
-    * `:eu3` - European Union 3
-    * `:kr2` - Korea 2
-    * `:prc2` - People's Republic of China (840 MHz)
-    * `:au` - Australia
-    * `:nz` - New Zealand (Experimental)
-    * `:na2` - Reduced FCC region
-    * `:na3` - 5 MHz FCC band
-    * `:open` - Open
-  * `power_mode` - The power-consumption mode of the reader as a whole
-    * `:full` (default)
-    * `:min_save`
-    * `:med_save`
-    * `:max_save`
-    * `:sleep`
-  * `antennas` - The antenna port configuration.  default: 1
-  * `tag_protocol` - The tag protocol used by the reader. default: :gen2
-  * `read_timeout` - The duration used by `read_sync` when reading tags. default: 500
+  ## Options
+
+  The reader requires the following keys:
+
+    * `device` - the device file for the reader serial connection.
+
+  The following keys are optional:
+
+    * `speed` - the serial port speed.  Defaults to `115200`.
+    * `region` - the regulatory RF environment used by the reader. Defaults to `:na` (North America).
+      * `:none` - Unspecified region
+      * `:na` - North America
+      * `:eu` - European Union
+      * `:kr` - Korea
+      * `:in` - India
+      * `:jp` - Japan
+      * `:prc` - People's Republic of China
+      * `:eu2` - European Union 2
+      * `:eu3` - European Union 3
+      * `:kr2` - Korea 2
+      * `:prc2` - People's Republic of China (840 MHz)
+      * `:au` - Australia
+      * `:nz` - New Zealand (Experimental)
+      * `:na2` - Reduced FCC region
+      * `:na3` - 5 MHz FCC band
+      * `:open` - Open
+    * `power_mode` - the power-consumption mode of the reader. Defaults to `:full`.
+      * `:full`
+      * `:min_save`
+      * `:med_save`
+      * `:max_save`
+      * `:sleep`
+    * `antennas` - the antenna port configuration. Defaults to `1`.
+    * `tag_protocol` - the tag protocol used by the reader.  Defaults to `:gen2`.
+    * `read_timeout` - the duration used by `read_sync` when reading tags. Defaults to `500`.
   """
-  @spec start_link(keyword) :: {:ok, pid} | {:error, term}
+  @spec start_link(keyword) :: {:ok, pid} | error
   def start_link(opts) do
     device = opts[:device]
     name = Path.basename(device) |> String.to_atom
@@ -469,7 +493,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Catch-all handlers for op commands that don't require any state binding or special handling
+  Catch-all handlers for op commands that don't require state binding or special handling
   """
   def handle_call(cmd, _from, %{transport: ts, reader: rdr} = s) when is_list(cmd) do
     resp = execute(ts, rdr, cmd)
@@ -510,7 +534,7 @@ defmodule TM.Mercury.Reader do
 
   defp initialize_reader(%{transport: ts, init: rdr}) do
     with {:ok, version} <- execute(ts, rdr, :version),
-         # Pick up the model first for any downstream encoding/decoding that needs it
+         # Pick up the model first for downstream encoding/decoding that needs to branch by model.
          reader = Map.put(rdr, :model, version.model),
          # Send CRC regardless of transport mode
          :ok <- execute(ts, reader, [:set_reader_optional_params, :send_crc, true]),
@@ -591,7 +615,7 @@ defmodule TM.Mercury.Reader do
           {:ok, tags} -> tags
           {:error, _} -> []
         end
-        # Return the reader in case any settings changed during prepare
+        # Return the reader in case settings changed during prepare
         {:ok, tags, new_reader}
       [errors: errors] ->
         {:error, errors}
@@ -624,7 +648,7 @@ defmodule TM.Mercury.Reader do
       [errors: []] ->
         {:ok, new_reader} = prepare_read(ts, rdr, rp)
         {:ok, task_pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), callback])
-        # Return the reader in case any settings changed during prepare
+        # Return the reader in case settings changed during prepare
         {:ok, task_pid, new_reader}
       [errors: errors] ->
         {:error, errors}
@@ -632,12 +656,13 @@ defmodule TM.Mercury.Reader do
   end
 
   defp execute_read_async_stop(async_pid, timeout) do
-    stop = Task.async(fn ->
-      send(async_pid, {:stop, self()})
-      receive do
-        reply -> reply
-      end
-    end)
+    stop =
+      Task.async(fn ->
+        send(async_pid, {:stop, self()})
+        receive do
+          reply -> reply
+        end
+      end)
     case Task.yield(stop, timeout) || Task.shutdown(stop) do
       nil ->
         Logger.warn "Failed to stop read async process in #{timeout}ms"
@@ -663,6 +688,7 @@ defmodule TM.Mercury.Reader do
 
   defp execute(ts, %__MODULE__{} = rdr, cmd) when is_atom(cmd),
     do: execute(ts, rdr, [cmd])
+
   defp execute(ts, %__MODULE__{} = rdr, [_key|_args] = cmd) do
     Command.build(rdr, cmd)
     |> send_command(ts)
@@ -670,10 +696,13 @@ defmodule TM.Mercury.Reader do
 
   defp send_command(:error, _ts),
     do: {:error, :command_error}
+
   defp send_command({:error, _reason} = error, _ts),
     do: error
+
   defp send_command({:ok, cmd}, ts),
     do: send_command(cmd, ts)
+
   defp send_command(cmd, ts),
     do: Transport.send_data(ts, cmd)
 
