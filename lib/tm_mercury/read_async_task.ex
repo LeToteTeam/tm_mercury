@@ -2,10 +2,11 @@ defmodule TM.Mercury.ReadAsyncTask do
   require Logger
   alias TM.Mercury.Reader
 
-  def start_link(reader_pid, callback) do
+  def start_link(reader, read_plan, listener) do
     loop(%{status: :running,
-           reader: reader_pid,
-           cb: callback})
+           read_plan: read_plan,
+           reader: reader,
+           listener: listener})
   end
 
   defp loop(state) do
@@ -22,13 +23,13 @@ defmodule TM.Mercury.ReadAsyncTask do
     end
   end
 
-  defp dispatch(%{status: :running, reader: rdr, cb: cb} = state) do
+  defp dispatch(%{status: :running} = state) do
     try do
-      case Reader.read_sync_prepared(rdr) do
+      case Reader.read_sync(state.reader, state.read_plan) do
         {:ok, tags} when length(tags) == 0 -> state
         {:ok, tags} when length(tags) > 0 ->
-          send(cb, {:tm_mercury, :tags, tags})
-          :ok = Reader.clear_tag_id_buffer(rdr)
+          send(state.listener, {:tm_mercury, :tags, tags})
+          :ok = Reader.clear_tag_id_buffer(state.reader)
           state
         {:error, :timeout} ->
           Logger.warn("Suspending asynchronous reads due to timeout")

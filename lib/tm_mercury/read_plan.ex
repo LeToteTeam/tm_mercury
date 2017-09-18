@@ -1,44 +1,24 @@
-defmodule TM.Mercury.ReadPlan do
-  @doc """
-  ReadPlan
-  """
-  defstruct [
-    antennas: [],
-    tag_protocol: nil,
-    filter: "",
-    tag_opts: [],
-    fast_search:  false,
-    weight: nil,
-    autonomous_read: false
-  ]
+defprotocol TM.Mercury.ReadPlan do
+  @type antennas :: [(number | {number, number})]
 
-  @type t :: %__MODULE__{
-    antennas: [(number | {number, number})],
-    tag_protocol: binary,
-    filter: binary,
-    tag_opts: [binary],
-    fast_search: boolean,
-    weight: number,
-    autonomous_read: boolean
-  }
+  @spec weight(t) :: non_neg_integer
+  def weight(rp)
 
-  def validate(%__MODULE__{} = rp) do
-    [errors: []]
-    |> validate_antennas(rp.antennas)
-    |> validate_tag_protocol(rp.tag_protocol)
-  end
+  @spec antennas(t) :: antennas
+  def antennas(rp)
 
-  defp validate_antennas(rep, []) do
-    add_error(rep, "antennas: cannot be empty")
-  end
-  defp validate_antennas(rep, _), do: rep
+  @spec filter(t) :: binary
+  def filter(rp)
 
-  defp validate_tag_protocol(rep, nil) do
-    add_error(rep, "tag_protocol is undefined")
-  end
-  defp validate_tag_protocol(rep, _),    do: rep
+  @spec protocol(t) :: atom
+  def protocol(rp)
 
-  defp add_error(rep, message) do
-    Keyword.put(rep, :errors, [message | rep.errors])
-  end
+  @spec tag_op(t) :: atom
+  def tag_op(rp)
+
+  @spec fast_search(t) :: boolean
+  def fast_search(rp)
+
+  @spec autonomous_read(t) :: boolean
+  def autonomous_read(rp)
 end
