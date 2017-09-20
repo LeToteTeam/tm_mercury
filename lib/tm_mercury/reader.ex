@@ -2,12 +2,12 @@ defmodule TM.Mercury.Reader do
   use GenServer
 
   alias TM.Mercury.{Transport, ReadAsyncTask, Protocol.Command}
-  alias TM.Mercury.{ReadPlan, SimpleReadPlan}
+  alias TM.Mercury.{ReadPlan, SimpleReadPlan, StopTriggerReadPlan}
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
   @type error :: {:error, term}
-  @type read_plan :: ReadPlan.t
+  @type read_plan :: SimpleReadPlan.t | StopTriggerReadPlan.t
 
   require Logger
 
@@ -249,7 +249,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Start reading tags asynchronously using the default read plan
+  Start reading tags asynchronously using the default read plan.
   Tags will be sent to the process with pid `listener` until `stop_read_async` is called.
   """
   @spec read_async_start(pid, pid) :: query_result | error
@@ -258,7 +258,7 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Start reading tags asynchronously using a custom read plan
+  Start reading tags asynchronously using a custom read plan.
   Tags will be sent to the process with pid `listener` until `stop_read_async` is called.
   """
   @spec read_async_start(pid, pid, read_plan) :: query_result | error
@@ -542,7 +542,7 @@ defmodule TM.Mercury.Reader do
 
   defp prepare_read(ts, rdr, rp) do
     # Set the protocol
-    rp_proto = ReadPlan.protocol(rp)
+    rp_proto = rp.protocol
     {:ok, rdr_proto} = execute(ts, rdr, :get_tag_protocol)
     unless rp_proto == rdr_proto do
       Logger.debug "Read plan's tag protocol (#{inspect rp_proto}) differs from reader (#{inspect rdr_proto}), configuring reader"
@@ -550,7 +550,7 @@ defmodule TM.Mercury.Reader do
     end
 
     # Set the antennas
-    rp_antennas = ReadPlan.antennas(rp)
+    rp_antennas = rp.antennas
     {:ok, rdr_antennas} = execute(ts, rdr, :get_antenna_port)
     unless rp_antennas == rdr_antennas do
       Logger.debug "Read plan's antenna settings (#{inspect rp_antennas}) differ from reader (#{inspect rdr_antennas}), configuring reader"
@@ -570,20 +570,20 @@ defmodule TM.Mercury.Reader do
 
   defp read_sync(ts, rdr, rp) do
     prepare_read(ts, rdr, rp)
-    case execute_read_sync(ts, rdr) do
-      {:ok, tags} -> tags
+    case execute_read_sync(ts, rdr, rp) do
+      {:ok, _tags} = ok -> ok
       {:error, _} = error ->
         Logger.error "Error while executing read_sync: #{inspect error}"
         []
     end
   end
 
-  defp execute_read_sync(ts, rdr) do
-    # TODO: Who owns these?
-    search_flags = [:configured_list, :large_tag_population_support]
-    op = [:read_tag_id_multiple, search_flags, rdr.read_timeout]
+  defp execute_read_sync(ts, rdr, rp) do
+    flags = [:configured_list, :large_tag_population_support]
+            |> add_flag(:fast_search, rp)
+            |> add_flag(:stop_on_tag_count, rp)
 
-    {:ok, cmd} = Command.build(rdr, op)
+    {:ok, cmd} = build_command_for_plan(rdr, flags, rp)
 
     try do
       with {:ok, _count} <- Transport.send_data(ts, cmd) do
@@ -597,8 +597,27 @@ defmodule TM.Mercury.Reader do
     end
   end
 
+  defp add_flag(flags, :fast_search, %{fast_search: true}) do
+   [:read_multiple_fast_search|flags]
+  end
+
+  defp add_flag(flags, :stop_on_tag_count, %{stop_on_tag_count: _count}) do
+    [:return_on_n_tags|flags]
+  end
+
+  defp add_flag(flags, _, _), do: flags
+
+  defp build_command_for_plan(rdr, flags, %SimpleReadPlan{} = rp) do
+    op = [:read_tag_id_multiple, flags, rdr.read_timeout]
+    Command.build(rdr, op)
+  end
+
+  defp build_command_for_plan(rdr, flags, %StopTriggerReadPlan{} = rp) do
+    op = [:read_tag_id_multiple, flags, rdr.read_timeout, rp.stop_on_tag_count]
+    Command.build(rdr, op)
+  end
+
   defp execute_read_async_start(ts, rdr, listener, rp) do
-    #prepare_read(ts, rdr, rp)
     Task.start_link(ReadAsyncTask, :start_link, [self(), rp, listener])
   end
 

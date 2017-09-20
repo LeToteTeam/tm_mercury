@@ -4,7 +4,7 @@ defmodule TM.Mercury.StopTriggerReadPlan do
   """
   defstruct [
     stop_on_tag_count: 0,
-    antennas: 1,
+    antennas: {1,1},
     protocol: :gen2,
     filter: "",
     tag_op: nil,
@@ -15,7 +15,7 @@ defmodule TM.Mercury.StopTriggerReadPlan do
 
   @type t :: %__MODULE__{
     stop_on_tag_count: non_neg_integer,
-    antennas: [(number | {number, number})],
+    antennas: number | {number, number},
     protocol: atom,
     filter: binary,
     tag_op: atom,
@@ -27,14 +27,4 @@ defmodule TM.Mercury.StopTriggerReadPlan do
   def new do
     %__MODULE__{}
   end
-end
-
-defimpl TM.Mercury.ReadPlan, for: TM.Mercury.StopTriggerReadPlan do
-  def weight(rp), do: rp.weight
-  def antennas(rp), do: rp.antennas
-  def filter(rp), do: rp.filter
-  def protocol(rp), do: rp.protocol
-  def tag_op(rp), do: rp.tag_op
-  def fast_search(rp), do: rp.fast_search
-  def autonomous_read(rp), do: rp.autonomous_read
 end
