@@ -1,22 +1,24 @@
 defmodule TM.Mercury.Reader do
   use GenServer
 
+  require Logger
+
   alias TM.Mercury.{Transport, ReadAsyncTask, Protocol.Command}
-  alias TM.Mercury.{ReadPlan, SimpleReadPlan, StopTriggerReadPlan}
+  alias TM.Mercury.{SimpleReadPlan, StopTriggerReadPlan}
+
+  @default_read_plan        %SimpleReadPlan{}
+  @default_read_timeout_ms  500
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
   @type error :: {:error, term}
+  @type read_timeout :: pos_integer
   @type read_plan :: SimpleReadPlan.t | StopTriggerReadPlan.t
-
-  require Logger
 
   defstruct [
     model: nil,
     power_mode: :full,
-    region: :na,
-    read_timeout: 500,
-    default_read_plan: SimpleReadPlan.new
+    region: :na
   ]
 
   # Client API
@@ -233,37 +235,26 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Read tags synchronously using the default read plan
-  """
-  @spec read_sync(pid) :: query_result | error
-  def read_sync(pid) do
-    GenServer.call(pid, :read_sync)
-  end
+  Read tags synchronously using a read plan and timeout.
 
-  @doc """
-  Read tags synchronously using a custom read plan
+  If a timeout is not provided, it will default to `500`.
+  If a read plan is not provided, it will default to `SimpleReadPlan`.
   """
-  @spec read_sync(pid, read_plan) :: query_result | error
-  def read_sync(pid, rp) do
-    GenServer.call(pid, [:read_sync, rp])
-  end
-
-  @doc """
-  Start reading tags asynchronously using the default read plan.
-  Tags will be sent to the process with pid `listener` until `stop_read_async` is called.
-  """
-  @spec read_async_start(pid, pid) :: query_result | error
-  def read_async_start(pid, listener) do
-    GenServer.call(pid, [:read_async_start, listener])
+  @spec read_sync(pid, read_timeout, read_plan) :: query_result | error
+  def read_sync(pid, timeout_ms \\ @default_read_timeout_ms, rp \\ @default_read_plan) do
+    GenServer.call(pid, [:read_sync, timeout_ms, rp])
   end
 
   @doc """
   Start reading tags asynchronously using a custom read plan.
   Tags will be sent to the process with pid `listener` until `stop_read_async` is called.
+
+  If a timeout is not provided, it will default to `500`.
+  If a read plan is not provided, it will default to `SimpleReadPlan`.
   """
-  @spec read_async_start(pid, pid, read_plan) :: query_result | error
-  def read_async_start(pid, listener, rp) do
-    GenServer.call(pid, [:read_async_start, listener, rp])
+  @spec read_async_start(pid, pid, read_timeout, read_plan) :: query_result | error
+  def read_async_start(pid, listener, timeout \\ @default_read_timeout_ms, rp \\ @default_read_plan) do
+    GenServer.call(pid, [:read_async_start, timeout, rp, listener])
   end
 
   @doc """
@@ -271,14 +262,6 @@ defmodule TM.Mercury.Reader do
   """
   def read_async_stop(pid) do
     GenServer.call(pid, :read_async_stop)
-  end
-
-  @doc """
-  Change the read timeout used for synchronous tag reading.
-  """
-  @spec set_read_timeout(pid, number) :: command_result | error
-  def set_read_timeout(pid, timeout) do
-    GenServer.call(pid, [:set_read_timeout, timeout])
   end
 
   @doc """
@@ -326,8 +309,6 @@ defmodule TM.Mercury.Reader do
       * `:med_save`
       * `:max_save`
       * `:sleep`
-    * `read_timeout` - the duration used by `read_sync` when reading tags. Defaults to `500`.
-    * `default_read_plan` - the read plan used by `read_sync` when one isn't provided. Defaults to SimpleReadPlan.new.
   """
   @spec start_link(keyword) :: {:ok, pid} | error
   def start_link(opts) do
@@ -350,7 +331,7 @@ defmodule TM.Mercury.Reader do
 
         state =
           Map.new(opts)
-          |> Map.take([:speed, :read_timeout])
+          |> Map.take([:speed])
           |> Map.put(:init, new_reader)
           |> Map.put(:reader, new_reader)
           |> Map.put(:transport, ts)
@@ -424,23 +405,33 @@ defmodule TM.Mercury.Reader do
     end)
   end
 
-  def handle_call([:read_sync, rp], _from, state) do
-    handle_read_sync(rp, state)
+  def handle_call([:read_sync, timeout, rp], _from, %{transport: ts, reader: rdr} = state) do
+    :ok = prepare_read(ts, rdr, rp)
+
+    reply =
+      case execute_read_sync(ts, rdr, timeout, rp) do
+        {:ok, _tags} = ok -> ok
+        {:error, :no_tags_found} -> {:ok, []}
+        {:error, _} = error ->
+          Logger.error "Error while executing read_sync: #{inspect error}"
+          error
+      end
+
+    {:reply, reply, state}
   end
 
-  def handle_call(:read_sync, _from, %{reader: rdr} = state) do
-    # Use the default read plan
-    handle_read_sync(rdr.default_read_plan, state)
-  end
-
-  def handle_call([:read_async_start, cb, rp], _from, state) do
-    # Use the provided read plan
-    handle_read_async_start(cb, rp, state)
-  end
-
-  def handle_call([:read_async_start, cb], _from, %{reader: rdr} = state) do
-    # Use the default read plan
-    handle_read_async_start(cb, rdr.default_read_plan, state)
+  def handle_call([:read_async_start, timeout, rp, listener], _from, state) do
+    case Map.fetch(state, :async_pid) do
+      {:ok, pid} when not is_nil(pid) ->
+        {:reply, {:error, {:already_started, pid}}, state}
+      _ ->
+        case execute_read_async_start(timeout, rp, listener) do
+          {:ok, async_pid} ->
+            {:reply, :ok, %{state | async_pid: async_pid}}
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
+    end
   end
 
   def handle_call(:read_async_stop, _from, state) do
@@ -451,10 +442,6 @@ defmodule TM.Mercury.Reader do
       _ ->
         {:reply, {:error, :not_started}, state}
     end
-  end
-
-  def handle_call([:set_read_timeout, timeout], _from, state) do
-    {:reply, :ok, %{state | read_timeout: timeout}}
   end
 
   def handle_call(:status, _from, %{status: status} = s) do
@@ -474,26 +461,6 @@ defmodule TM.Mercury.Reader do
   end
 
   # Helpers for handle_call callbacks
-
-  # Common handler for multiple read_sync callbacks
-  defp handle_read_sync(rp, %{transport: ts, reader: rdr} = state) do
-    {:reply, read_sync(ts, rdr, rp), state}
-  end
-
-  # Common handler for multiple read_async_start callbacks
-  defp handle_read_async_start(listener, rp, %{transport: ts, reader: rdr} = state) do
-    case Map.fetch(state, :async_pid) do
-      {:ok, pid} when not is_nil(pid) ->
-        {:reply, {:error, {:already_started, pid}}, state}
-      _ ->
-        case execute_read_async_start(ts, rdr, listener, rp) do
-          {:ok, async_pid} ->
-            {:reply, :ok, %{state | async_pid: async_pid}}
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
-    end
-  end
 
   defp initialize_reader(%{transport: ts, init: rdr}) do
     with {:ok, version} <- execute(ts, rdr, :version),
@@ -563,30 +530,16 @@ defmodule TM.Mercury.Reader do
     # Reset statistics
     {:ok, _} = execute(ts, rdr, [:get_reader_stats, :reset, :rf_on_time])
 
-    # TODO: do read plan specific configuration (Q, StopOnTagCount, etc.) for non-simple read plans
-
     :ok
   end
 
-  defp read_sync(ts, rdr, rp) do
-    prepare_read(ts, rdr, rp)
-    case execute_read_sync(ts, rdr, rp) do
-      {:ok, _tags} = ok -> ok
-      {:error, _} = error ->
-        Logger.error "Error while executing read_sync: #{inspect error}"
-        []
-    end
-  end
-
-  defp execute_read_sync(ts, rdr, rp) do
+  defp execute_read_sync(ts, rdr, timeout, rp) do
     flags = [:configured_list, :large_tag_population_support]
             |> add_flag(:fast_search, rp)
-            |> add_flag(:stop_on_tag_count, rp)
-
-    {:ok, cmd} = build_command_for_plan(rdr, flags, rp)
 
     try do
-      with {:ok, _count} <- Transport.send_data(ts, cmd) do
+      with {:ok, cmd}    <- build_command_for_plan(rdr, flags, timeout, rp),
+           {:ok, _count} <- Transport.send_data(ts, cmd) do
         flags = TM.Mercury.Tag.MetadataFlag.all
         execute(ts, rdr, [:get_tag_id_buffer, flags])
       end
@@ -601,24 +554,19 @@ defmodule TM.Mercury.Reader do
    [:read_multiple_fast_search|flags]
   end
 
-  defp add_flag(flags, :stop_on_tag_count, %{stop_on_tag_count: _count}) do
-    [:return_on_n_tags|flags]
-  end
-
   defp add_flag(flags, _, _), do: flags
 
-  defp build_command_for_plan(rdr, flags, %SimpleReadPlan{} = rp) do
-    op = [:read_tag_id_multiple, flags, rdr.read_timeout]
+  defp build_command_for_plan(rdr, flags, timeout, %SimpleReadPlan{}) do
+    op = [:read_tag_id_multiple, flags, timeout]
     Command.build(rdr, op)
   end
 
-  defp build_command_for_plan(rdr, flags, %StopTriggerReadPlan{} = rp) do
-    op = [:read_tag_id_multiple, flags, rdr.read_timeout, rp.stop_on_tag_count]
-    Command.build(rdr, op)
+  defp build_command_for_plan(_rdr, _flags, _timeout, _rp) do
+    {:error, :not_implemented}
   end
 
-  defp execute_read_async_start(ts, rdr, listener, rp) do
-    Task.start_link(ReadAsyncTask, :start_link, [self(), rp, listener])
+  defp execute_read_async_start(timeout, rp, listener) do
+    Task.start_link(ReadAsyncTask, :start_link, [self(), timeout, rp, listener])
   end
 
   defp execute_read_async_stop(async_pid, timeout) do
