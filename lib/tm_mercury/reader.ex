@@ -320,8 +320,6 @@ defmodule TM.Mercury.Reader do
   def init({device, opts}) do
     Logger.debug "Starting RFID reader process for #{device} with pid #{inspect self()}"
 
-    #opts = Keyword.merge(@default_opts, opts)
-
     # Pass this subset of options along to the transport process
     ts_opts = Keyword.take(opts, [:device, :speed, :timeout, :framing])
 
