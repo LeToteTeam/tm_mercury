@@ -131,11 +131,6 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code, <<0x00, search_mask :: 16, timeout :: 16>>)}
   end
 
-  defp build_command(_rdr, {:read_tag_id_multiple, code}, [search_flags, timeout, tag_count]) do
-    search_mask = enum_flags_mask(search_flags, SearchFlag)
-    {:ok, Message.encode(code, <<0x00, search_mask :: 16, timeout :: 16, SearchFlag.return_on_n_tags :: 16, tag_count :: 32>>)}
-  end
-
   defp build_command(_rdr, op, opts) do
     {:error, {:invalid_command, op, opts}}
   end
