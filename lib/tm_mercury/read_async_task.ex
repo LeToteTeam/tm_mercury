@@ -20,7 +20,7 @@ defmodule TM.Mercury.ReadAsyncTask do
       :resume ->
         loop(%{state | status: :running})
       after
-        100 -> loop(dispatch(state))
+        500 -> loop(dispatch(state))
     end
   end
 

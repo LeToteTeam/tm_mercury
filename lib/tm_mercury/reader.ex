@@ -7,7 +7,7 @@ defmodule TM.Mercury.Reader do
   alias TM.Mercury.{SimpleReadPlan, StopTriggerReadPlan}
 
   @default_read_plan        %SimpleReadPlan{}
-  @default_read_timeout_ms  500
+  @default_read_timeout_ms  100
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
@@ -437,7 +437,7 @@ defmodule TM.Mercury.Reader do
   def handle_call(:read_async_stop, _from, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when is_pid(pid) ->
-        stop_result = execute_read_async_stop(pid, 1000)
+        stop_result = execute_read_async_stop(pid, 2000)
         {:reply, stop_result, %{state | async_pid: nil}}
       _ ->
         {:reply, {:error, :not_started}, state}
@@ -553,7 +553,6 @@ defmodule TM.Mercury.Reader do
   defp add_flag(flags, :fast_search, %{fast_search: true}) do
    [:read_multiple_fast_search|flags]
   end
-
   defp add_flag(flags, _, _), do: flags
 
   defp build_command_for_plan(rdr, flags, timeout, %SimpleReadPlan{}) do
