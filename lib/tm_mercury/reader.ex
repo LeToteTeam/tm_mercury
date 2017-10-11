@@ -481,6 +481,7 @@ defmodule TM.Mercury.Reader do
          reader = Map.put(rdr, :model, version.model),
          # Send CRC regardless of transport mode
          :ok <- execute(ts, reader, [:set_reader_optional_params, :send_crc, true]),
+         :ok <- execute(ts, reader, [:set_reader_optional_params, :rssi_in_dbm, true]),
          :ok <- execute(ts, reader, [:set_region, reader.region]),
          :ok <- execute(ts, reader, [:set_power_mode, reader.power_mode]),
       do: {:ok, reader}

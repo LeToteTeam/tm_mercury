@@ -52,4 +52,9 @@ defmodule TM.Mercury.ReaderTest do
 
     assert changed_cdbm == change_to_cdbm
   end
+
+  test "RSSI should be a negative number (dbm)", context do
+    {:ok, [tag|_]} = Reader.read_sync(context.pid)
+    assert tag[:rssi] < 0
+  end
 end
