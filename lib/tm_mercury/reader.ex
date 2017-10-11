@@ -423,19 +423,34 @@ defmodule TM.Mercury.Reader do
       {:ok, pid} when not is_nil(pid) ->
         {:reply, {:error, {:already_started, pid}}, state}
       _ ->
-        case execute_read_async_start(timeout, rp, listener) do
-          {:ok, async_pid} ->
-            {:reply, :ok, %{state | async_pid: async_pid}}
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
+        {:ok, async_pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), timeout, rp, listener])
+        {:reply, :ok, %{state | async_pid: async_pid}}
     end
   end
 
   def handle_call(:read_async_stop, _from, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when is_pid(pid) ->
-        stop_result = execute_read_async_stop(pid, 2000)
+        stop_timeout = 2000
+
+        stop_task =
+          Task.async(fn ->
+            send(pid, {:stop, self()})
+            receive do
+              reply -> reply
+            end
+          end)
+
+        stop_result = 
+          case Task.yield(stop_task, stop_timeout) || Task.shutdown(stop_task) do
+            nil ->
+              Logger.warn "Failed to stop read async process in #{stop_timeout}ms"
+              Process.unlink(pid)
+              Process.exit(pid, :kill)
+              {:ok, :killed}
+            other ->
+              other
+          end
         {:reply, stop_result, %{state | async_pid: nil}}
       _ ->
         {:reply, {:error, :not_started}, state}
@@ -560,29 +575,6 @@ defmodule TM.Mercury.Reader do
 
   defp build_command_for_plan(_rdr, _flags, _timeout, _rp) do
     {:error, :not_implemented}
-  end
-
-  defp execute_read_async_start(timeout, rp, listener) do
-    Task.start_link(ReadAsyncTask, :start_link, [self(), timeout, rp, listener])
-  end
-
-  defp execute_read_async_stop(async_pid, timeout) do
-    stop =
-      Task.async(fn ->
-        send(async_pid, {:stop, self()})
-        receive do
-          reply -> reply
-        end
-      end)
-    case Task.yield(stop, timeout) || Task.shutdown(stop) do
-      nil ->
-        Logger.warn "Failed to stop read async process in #{timeout}ms"
-        Process.unlink(async_pid)
-        Process.exit(async_pid, :kill)
-        {:ok, :killed}
-      other ->
-        other
-    end
   end
 
   # Generic command helpers
