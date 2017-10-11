@@ -592,21 +592,14 @@ defmodule TM.Mercury.Reader do
   defp execute(ts, %__MODULE__{} = rdr, cmd) when is_atom(cmd),
     do: execute(ts, rdr, [cmd])
 
-  defp execute(ts, %__MODULE__{} = rdr, [_key|_args] = cmd) do
+  defp execute(ts, %__MODULE__{} = rdr, cmd) when is_list(cmd) do
     Command.build(rdr, cmd)
     |> send_command(ts)
   end
-
-  defp send_command(:error, _ts),
-    do: {:error, :command_error}
 
   defp send_command({:error, _reason} = error, _ts),
     do: error
 
   defp send_command({:ok, cmd}, ts),
-    do: send_command(cmd, ts)
-
-  defp send_command(cmd, ts),
     do: Transport.send_data(ts, cmd)
-
 end
