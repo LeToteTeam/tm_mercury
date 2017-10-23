@@ -25,7 +25,7 @@ defmodule TM.Mercury.Tag do
   end
 
   def parse_rssi(data, 0), do: data
-  def parse_rssi({<<rssi, tail :: binary>>, result}, _) do
+  def parse_rssi({<<rssi :: 8-signed, tail :: binary>>, result}, _) do
     {tail, Keyword.put(result, :rssi, rssi)}
   end
 

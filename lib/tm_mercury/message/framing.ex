@@ -13,8 +13,6 @@ defmodule TM.Mercury.Message.Framing do
     0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
   ]
 
-  @max_packet_size 256
-
   def init(_args) do
     {:ok, %{
       buffer: "",

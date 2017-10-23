@@ -2,7 +2,7 @@ IEx.configure(inspect: [limit: :infinity])
 
 alias TM.Mercury.Utils
 alias TM.Mercury.Protocol.{Command, Opcode, Parameter, Region}
-alias TM.Mercury.{Reader, Reader.Config, ReadPlan, Tag, Tag.Protocol, Transport}
+alias TM.Mercury.{Reader, Reader.Config, ReadPlan, SimpleReadPlan, StopTriggerReadPlan, Tag, Tag.Protocol, Transport}
 
 defmodule Helpers do
   require Logger
@@ -25,12 +25,24 @@ defmodule Helpers do
     Utils.to_hex_string(tag[:epc]) |> String.replace(" ", "")
   end
 
-  def start_async_test(device \\ "/dev/ttyACM0") do
+  def start_async_test(device \\ "/dev/ttyACM0", pulse_width \\ 100, period \\ 500, power \\ 2000) do
     Logger.configure(level: :info)
-    {:ok, reader} = Reader.start_link(device: device)
+
+    reader =
+      case Reader.start_link(device: device) do
+        {:ok, pid} -> pid
+        {:error, {:already_started, pid}} -> pid
+      end
+
+    :ok = Reader.set_read_tx_power(reader, power)
+
     {:ok, listener} = Task.start_link(&print_tags_async/0)
-    Reader.read_async_start(reader, listener)
+    Reader.read_async_start(reader, listener, pulse_width, period)
     reader
+  end
+
+  def stop_async(pid) do
+    Reader.read_async_stop(pid)
   end
 
   def print_tags_async do

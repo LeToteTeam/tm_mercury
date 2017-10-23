@@ -2,7 +2,7 @@ defmodule TM.Mercury.Protocol.Command do
 
   import TM.Mercury.Utils.Binary
 
-  alias TM.Mercury.{Message, Reader}
+  alias TM.Mercury.{Message, Reader, SearchFlag}
   alias TM.Mercury.Protocol.{Opcode, Region}
   alias TM.Mercury.Reader.{Config, Stats, PowerMode}
   alias TM.Mercury.Tag.Protocol, as: TagProtocol
@@ -127,8 +127,8 @@ defmodule TM.Mercury.Protocol.Command do
   end
 
   defp build_command(_rdr, {:read_tag_id_multiple, code}, [search_flags, timeout]) do
-    search_mask = enum_flags_mask(search_flags, TM.Mercury.SearchFlag)
-    {:ok, Message.encode(code, <<0x00, search_mask::16, timeout::16>>)}
+    search_mask = enum_flags_mask(search_flags, SearchFlag)
+    {:ok, Message.encode(code, <<0x00, search_mask :: 16, timeout :: 16>>)}
   end
 
   defp build_command(_rdr, op, opts) do

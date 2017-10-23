@@ -5,26 +5,6 @@ defmodule TM.Mercury.Transport do
 
   alias TM.Mercury.Message
 
-  @flush_bytes String.duplicate(<<0xFF>>, 64)
-
-  @gen2_singulation_option [
-    select_disabled:         0x00,
-    select_on_epc:           0x01,
-    select_on_tid:           0x02,
-    select_on_user_mem:      0x03,
-    select_on_addressed_epc: 0x04,
-    use_password:            0x05,
-    inverse_select_bit:      0x08,
-    flag_metadata:           0x10,
-    extended_data_length:    0x20,
-    secure_read_data:        0x40
-  ]
-
-  @tag_id_option [
-    none:   0x00,
-    rewind: 0x01
-  ]
-
   @defaults [
     speed: 115200,
     active: true,

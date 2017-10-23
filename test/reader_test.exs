@@ -1,7 +1,7 @@
 defmodule TM.Mercury.ReaderTest do
   use ExUnit.Case, async: false
 
-  alias TM.Mercury.{Reader, ReadPlan}
+  alias TM.Mercury.{Reader, SimpleReadPlan, StopTriggerReadPlan}
 
   setup_all do
     {:ok, pid} = Reader.start_link(device: "/dev/ttyACM0", speed: 115200)
@@ -13,10 +13,10 @@ defmodule TM.Mercury.ReaderTest do
     assert tag[:protocol] == :gen2
   end
 
-  test "Reader returns a tag synchronously using a custom read plan", context do
-    rp = %ReadPlan{antennas: 1, tag_protocol: :gen2}
-    {:ok, [tag|_]} = Reader.read_sync(context.pid, rp)
-    assert tag[:protocol] == rp.tag_protocol
+  test "Reader returns a tag synchronously using a simple read plan", context do
+    rp = %SimpleReadPlan{antennas: 1, protocol: :gen2}
+    {:ok, [tag|_]} = Reader.read_sync(context.pid, 100, rp)
+    assert tag[:protocol] == rp.protocol
   end
 
   test "Reader returns a tag asynchronously using current reader settings", context do
@@ -25,11 +25,16 @@ defmodule TM.Mercury.ReaderTest do
     Reader.read_async_stop(context.pid)
   end
 
+  test "Reader returns a single tag read for a stop trigger read plan with tag count = 1", context do
+    rp = %StopTriggerReadPlan{stop_on_tag_count: 1, antennas: 1, protocol: :gen2}
+    assert {:error, :not_implemented} = Reader.read_sync(context.pid, 100, rp)
+  end
+
   test "Reader returns a valid temperature", context do
     {:ok, temp_c} = Reader.get_temperature(context.pid)
     assert temp_c > 0
   end
-  
+
   test "Reader changes power level", context do
     {:ok, initial_cdbm} = Reader.get_read_tx_power(context.pid)
 
@@ -46,5 +51,10 @@ defmodule TM.Mercury.ReaderTest do
     Reader.set_read_tx_power(context.pid, initial_cdbm)
 
     assert changed_cdbm == change_to_cdbm
-  end  
+  end
+
+  test "RSSI should be a negative number (dbm)", context do
+    {:ok, [tag|_]} = Reader.read_sync(context.pid)
+    assert tag[:rssi] < 0
+  end
 end
