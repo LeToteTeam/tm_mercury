@@ -3,6 +3,8 @@ defmodule TM.Mercury.Reader do
 
   require Logger
 
+  @behaviour Access
+
   alias TM.Mercury.{Transport, ReadAsyncTask, Protocol.Command}
   alias TM.Mercury.{SimpleReadPlan, StopTriggerReadPlan}
 
@@ -19,7 +21,8 @@ defmodule TM.Mercury.Reader do
   defstruct [
     model: nil,
     power_mode: :full,
-    region: :na
+    region: :na,
+    last_read_plan: nil
   ]
 
   # Client API
@@ -428,7 +431,7 @@ defmodule TM.Mercury.Reader do
           error
       end
 
-    {:reply, reply, state}
+    {:reply, reply, put_in(state, [:reader, :last_read_plan], rp)}
   end
 
   def handle_call([:read_async_start, {pw, period} = cycle, rp, listener], _from, state) do
@@ -456,7 +459,7 @@ defmodule TM.Mercury.Reader do
             end
           end)
 
-        stop_result = 
+        stop_result =
           case Task.yield(stop_task, stop_timeout) || Task.shutdown(stop_task) do
             nil ->
               Logger.warn "Failed to stop read async process in #{stop_timeout}ms"
@@ -487,6 +490,13 @@ defmodule TM.Mercury.Reader do
     resp = execute(ts, rdr, [cmd])
     {:reply, resp, s}
   end
+
+  # Access protocol
+
+  defdelegate fetch(term, key), to: Map
+  defdelegate get(structure, key, default), to: Map
+  defdelegate get_and_update(data, key, function), to: Map
+  defdelegate pop(data, key), to: Map
 
   # Helpers for handle_call callbacks
 
@@ -537,13 +547,8 @@ defmodule TM.Mercury.Reader do
   end
 
   defp prepare_read(ts, rdr, rp) do
-    # Set the protocol
-    rp_proto = rp.protocol
-    {:ok, rdr_proto} = execute(ts, rdr, :get_tag_protocol)
-    unless rp_proto == rdr_proto do
-      Logger.debug "Read plan's tag protocol (#{inspect rp_proto}) differs from reader (#{inspect rdr_proto}), configuring reader"
-      :ok = execute(ts, rdr, [:set_tag_protocol, rp_proto])
-    end
+    # Check the protocol
+    :ok = prepare_tag_protocol(ts, rdr, rp, rdr.last_read_plan)
 
     # Set the antennas
     rp_antennas = rp.antennas
@@ -556,10 +561,30 @@ defmodule TM.Mercury.Reader do
     # Clear the tag buffer
     :ok = execute(ts, rdr, :clear_tag_id_buffer)
 
-    # Reset statistics
-    {:ok, _} = execute(ts, rdr, [:get_reader_stats, :reset, :rf_on_time])
-
     :ok
+  end
+
+  defp prepare_tag_protocol(ts, rdr, rp, nil) do
+    # Get the reader's currently configured tag protocol
+    {:ok, rdr_proto} = execute(ts, rdr, :get_tag_protocol)
+    if rp.protocol != rdr_proto do
+      Logger.debug "Configuring reader to use #{rp.protocol} protocol"
+      execute(ts, rdr, [:set_tag_protocol, rp.protocol])
+    else
+      Logger.debug "Last read plan not available and the reader is already configured for #{rp.protocol}"
+      :ok
+    end
+  end
+
+  defp prepare_tag_protocol(_ts, _rdr, %{protocol: proto}, %{protocol: proto}) do
+    # Protocol in last read plan is the same, proceed without configuring the reader.
+    :ok
+  end
+
+  defp prepare_tag_protocol(ts, rdr, %{protocol: rp_proto}, %{protocol: last_rp_proto}) do
+    # Protocol in last read plan is different, configure reader for new proto.
+    Logger.debug "Configuring reader to use #{rp_proto} protocol"
+    execute(ts, rdr, [:set_tag_protocol, rp_proto])
   end
 
   defp execute_read_sync(ts, rdr, timeout, rp) do
