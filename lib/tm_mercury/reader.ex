@@ -492,7 +492,7 @@ defmodule TM.Mercury.Reader do
     {:reply, resp, s}
   end
 
-  # Access protocol
+  # Access behaviour
 
   defdelegate fetch(term, key), to: Map
   defdelegate get(structure, key, default), to: Map
