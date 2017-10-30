@@ -420,12 +420,13 @@ defmodule TM.Mercury.Reader do
   end
 
   def handle_call([:read_sync, timeout, rp], _from, %{transport: ts, reader: rdr} = state) do
-    :ok = prepare_read(ts, rdr, rp)
-
     reply =
-      case execute_read_sync(ts, rdr, timeout, rp) do
-        {:ok, _tags} = ok -> ok
-        {:error, :no_tags_found} -> {:ok, []}
+      with :ok <- prepare_read(ts, rdr, rp),
+           {:ok, tags} <- execute_read_sync(ts, rdr, timeout, rp) do
+        {:ok, tags}
+      else
+        {:error, :no_tags_found} ->
+          {:ok, []}
         {:error, _} = error ->
           Logger.error "Error while executing read_sync: #{inspect error}"
           error
@@ -547,31 +548,41 @@ defmodule TM.Mercury.Reader do
   end
 
   defp prepare_read(ts, rdr, rp) do
-    # Check the protocol
-    :ok = prepare_tag_protocol(ts, rdr, rp, rdr.last_read_plan)
+    # Check the protocol and antennas, then clear the tag buffer.
+    with :ok <- prepare_tag_protocol(ts, rdr, rp, rdr.last_read_plan),
+         :ok <- prepare_antenna_port(ts, rdr, rp, rdr.last_read_plan),
+         :ok <- execute(ts, rdr, :clear_tag_id_buffer),
+      do: :ok
+  end
 
-    # Set the antennas
-    rp_antennas = rp.antennas
-    {:ok, rdr_antennas} = execute(ts, rdr, :get_antenna_port)
-    unless rp_antennas == rdr_antennas do
-      Logger.debug "Read plan's antenna settings (#{inspect rp_antennas}) differ from reader (#{inspect rdr_antennas}), configuring reader"
-      :ok = execute(ts, rdr, [:set_antenna_port, rp_antennas])
+  defp prepare_antenna_port(ts, rdr, rp, nil) do
+    {:ok, antennas} = execute(ts, rdr, :get_antenna_port)
+    if rp.antennas != antennas do
+      Logger.debug "Configure reader to use antennas #{inspect rp.antennas}"
+      execute(ts, rdr, [:set_antenna_port, rp.antennas])
+    else
+      Logger.debug "Last read plan not available and the reader is already configured for antennas #{inspect rp.antennas}"
+      :ok
     end
+  end
 
-    # Clear the tag buffer
-    :ok = execute(ts, rdr, :clear_tag_id_buffer)
-
+  defp prepare_antenna_port(_ts, _rdr, %{antennas: ant}, %{antennas: ant}) do
     :ok
+  end
+
+  defp prepare_antenna_port(ts, rdr, %{antennas: rp_ants}, %{antennas: _last_rp_ants}) do
+    Logger.debug "Configuring reader to use antennas #{inspect rp_ants}"
+    execute(ts, rdr, [:set_antenna_port, rp_ants])
   end
 
   defp prepare_tag_protocol(ts, rdr, rp, nil) do
     # Get the reader's currently configured tag protocol
     {:ok, rdr_proto} = execute(ts, rdr, :get_tag_protocol)
     if rp.protocol != rdr_proto do
-      Logger.debug "Configuring reader to use #{rp.protocol} protocol"
+      Logger.debug "Configuring reader to use protocol #{rp.protocol}"
       execute(ts, rdr, [:set_tag_protocol, rp.protocol])
     else
-      Logger.debug "Last read plan not available and the reader is already configured for #{rp.protocol}"
+      Logger.debug "Last read plan not available and the reader is already configured for protocol #{rp.protocol}"
       :ok
     end
   end
@@ -581,9 +592,9 @@ defmodule TM.Mercury.Reader do
     :ok
   end
 
-  defp prepare_tag_protocol(ts, rdr, %{protocol: rp_proto}, %{protocol: last_rp_proto}) do
+  defp prepare_tag_protocol(ts, rdr, %{protocol: rp_proto}, %{protocol: _last_rp_proto}) do
     # Protocol in last read plan is different, configure reader for new proto.
-    Logger.debug "Configuring reader to use #{rp_proto} protocol"
+    Logger.debug "Configuring reader to use protocol #{rp_proto}"
     execute(ts, rdr, [:set_tag_protocol, rp_proto])
   end
 
