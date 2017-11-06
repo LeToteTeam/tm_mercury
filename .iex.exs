@@ -25,11 +25,11 @@ defmodule Helpers do
     Utils.to_hex_string(tag[:epc]) |> String.replace(" ", "")
   end
 
-  def start_async_test(device \\ "/dev/ttyACM0", pulse_width \\ 100, period \\ 500, power \\ 2000) do
+  def start_async_test(device \\ "/dev/ttyACM0", on_time_ms \\ 100, off_time_ms \\ 400, power \\ 2000) do
     Logger.configure(level: :info)
 
     reader =
-      case Reader.start_link(device: device) do
+      case Reader.start_link(device) do
         {:ok, pid} -> pid
         {:error, {:already_started, pid}} -> pid
       end
@@ -37,7 +37,7 @@ defmodule Helpers do
     :ok = Reader.set_read_tx_power(reader, power)
 
     {:ok, listener} = Task.start_link(&print_tags_async/0)
-    Reader.read_async_start(reader, listener, pulse_width, period)
+    Reader.read_async_start(reader, listener, on_time_ms, off_time_ms)
     reader
   end
 

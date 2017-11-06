@@ -45,12 +45,12 @@ defmodule TM.Mercury.Transport do
 
   # Connection API
 
-  def init({owner, opts}) do
+  def init({device, owner, opts}) do
     opts = Keyword.merge(@defaults, opts)
     {:ok, uart} = Nerves.UART.start_link
 
     s = %{
-      device: opts[:device],
+      device: device,
       opts: opts,
       uart: uart,
       owner: owner,
