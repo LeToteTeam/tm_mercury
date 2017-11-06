@@ -4,7 +4,7 @@ defmodule TM.Mercury.ReaderTest do
   alias TM.Mercury.{Reader, SimpleReadPlan, StopTriggerReadPlan}
 
   setup_all do
-    {:ok, pid} = Reader.start_link(device: "/dev/ttyACM0", speed: 115200)
+    {:ok, pid} = Reader.start_link("/dev/ttyACM0", speed: 115200)
     {:ok, %{pid: pid}}
   end
 

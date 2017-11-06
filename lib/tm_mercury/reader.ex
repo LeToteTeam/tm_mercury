@@ -294,11 +294,11 @@ defmodule TM.Mercury.Reader do
   Start a process and open a connection
   with the reader over UART connected via TTL / USB
 
-  ## Options
-
-  The reader requires the following keys:
+  The reader requires the following parameters:
 
     * `device` - the device file for the reader serial connection.
+
+  ## Optional Parameters
 
   The following keys are optional:
 
@@ -327,9 +327,8 @@ defmodule TM.Mercury.Reader do
       * `:max_save`
       * `:sleep`
   """
-  @spec start_link(keyword) :: {:ok, pid} | error
-  def start_link(opts) do
-    device = opts[:device]
+  @spec start_link(String.t, keyword) :: {:ok, pid} | error
+  def start_link(device, opts \\ []) do
     name = Path.basename(device) |> String.to_atom
     GenServer.start_link(__MODULE__, {device, opts}, name: name)
   end
@@ -338,9 +337,9 @@ defmodule TM.Mercury.Reader do
     Logger.debug "Starting RFID reader process for #{device} with pid #{inspect self()}"
 
     # Pass this subset of options along to the transport process
-    ts_opts = Keyword.take(opts, [:device, :speed, :timeout, :framing])
+    ts_opts = Keyword.take(opts, [:speed, :timeout, :framing])
 
-    case Connection.start_link(Transport, {self(), ts_opts}) do
+    case Connection.start_link(Transport, {device, self(), ts_opts}) do
       {:ok, ts} ->
         new_reader = struct(%__MODULE__{}, opts)
 
