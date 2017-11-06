@@ -8,9 +8,10 @@ defmodule TM.Mercury.Reader do
   alias TM.Mercury.{Transport, ReadAsyncTask, Protocol.Command}
   alias TM.Mercury.{SimpleReadPlan, StopTriggerReadPlan}
 
-  @def_read_plan        %SimpleReadPlan{}
-  @def_read_timeout_ms  100
-  @def_async_period_ms  500
+  @def_read_plan          %SimpleReadPlan{}
+  @def_read_timeout_ms    100
+  @def_async_on_time_ms   100
+  @def_async_off_time_ms  400
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
@@ -253,23 +254,24 @@ defmodule TM.Mercury.Reader do
   Start reading tags asynchronously using a custom read plan.
   Tag reads will be sent to the process with pid `listener` until `stop_read_async` is called.
 
-  If `pulse_width_ms` is not provided, it will default to `100`.
-  If `period_ms` is not provided, it will default to `500`.
+  If `on_time_ms` is not provided, it will default to `100`.
+  If `off_time_ms` is not provided, it will default to `400`.
+
   If a read plan is not provided, it will default to `SimpleReadPlan`.
   """
   @spec read_async_start(pid, pid, pos_integer, pos_integer, read_plan) :: query_result | error
 
   def read_async_start(pid, listener,
-                       pulse_width_ms \\ @def_read_timeout_ms,
-                       period_ms \\ @def_async_period_ms,
+                       on_time_ms \\ @def_async_on_time_ms,
+                       off_time_ms \\ @def_async_off_time_ms,
                        rp \\ @def_read_plan)
 
-  def read_async_start(_pid, _listener, pulse_width_ms, period_ms, _rp) when pulse_width_ms > period_ms do
+  def read_async_start(_pid, _listener, on_time_ms, off_time_ms, _rp) when on_time_ms <= 0 or off_time_ms <= 0 do
     {:error, :bad_duty_cycle}
   end
 
-  def read_async_start(pid, listener, pulse_width_ms, period_ms, rp) do
-    GenServer.call(pid, [:read_async_start, {pulse_width_ms, period_ms}, rp, listener])
+  def read_async_start(pid, listener, on_time_ms, off_time_ms, rp) do
+    GenServer.call(pid, [:read_async_start, {on_time_ms, off_time_ms}, rp, listener])
   end
 
   @doc """
@@ -350,7 +352,7 @@ defmodule TM.Mercury.Reader do
           |> Map.put(:transport, ts)
           |> Map.put(:status, :disconnected)
           |> Map.put(:async_pid, nil)
-          |> Map.put(:async_period, @def_async_period_ms)
+          |> Map.put(:async_period, @def_async_on_time_ms + @def_async_off_time_ms)
 
         {:ok, state}
       error ->
@@ -435,12 +437,13 @@ defmodule TM.Mercury.Reader do
     {:reply, reply, put_in(state, [:reader, :last_read_plan], rp)}
   end
 
-  def handle_call([:read_async_start, {pw, period} = cycle, rp, listener], _from, state) do
+  def handle_call([:read_async_start, {on_time_ms, off_time_ms} = cycle, rp, listener], _from, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when not is_nil(pid) ->
         {:reply, {:error, {:already_started, pid}}, state}
       _ ->
-        Logger.info(fn -> "Starting async reads with #{trunc Float.round(pw / (pw + period), 2) * 100}% duty cycle" end)
+        period = on_time_ms + off_time_ms
+        Logger.info(fn -> "Starting async reads with #{trunc Float.round(on_time_ms / period, 2) * 100}% duty cycle" end)
         {:ok, pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), cycle, rp, listener])
         {:reply, :ok, %{state | async_pid: pid, async_period: period}}
     end
@@ -449,7 +452,7 @@ defmodule TM.Mercury.Reader do
   def handle_call(:read_async_stop, _from, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when is_pid(pid) ->
-        async_period = Map.get(state, :async_period, @def_async_period_ms)
+        async_period = Map.get(state, :async_period)
         stop_timeout = async_period * 2
 
         stop_task =
