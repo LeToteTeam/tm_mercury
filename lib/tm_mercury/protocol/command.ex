@@ -108,8 +108,8 @@ defmodule TM.Mercury.Protocol.Command do
     {:ok, Message.encode(code, <<2, ant :: binary>>)}
   end
 
-  defp build_command(_rdr, {:get_antenna_port, code}, [0x05]) do
-    {:ok, Message.encode(code, <<0x05>>)}
+  defp build_command(_rdr, {:get_antenna_port, code}, [sub|[]]) do
+    {:ok, Message.encode(code, <<sub>>)}
   end
 
   defp build_command(_rdr, {:get_reader_stats, code}, [option, flags]) do
