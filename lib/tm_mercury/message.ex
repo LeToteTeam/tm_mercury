@@ -71,6 +71,12 @@ defmodule TM.Mercury.Message do
     Map.put(msg, :data, ant_list)
   end
 
+  def decode(%Message{opcode: :get_antenna_port, data: <<0x06, tail :: binary>>} = msg) do
+    # Antenna return loss
+    ant_list = for <<ant, loss <- tail>>, do: {ant, loss}
+    Map.put(msg, :data, ant_list)
+  end
+
   def decode(%Message{opcode: :get_antenna_port} = msg) do
     <<tx :: uint8, rx :: uint8 >> = msg.data
     Map.put(msg, :data, {tx, rx})

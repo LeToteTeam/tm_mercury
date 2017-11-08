@@ -216,10 +216,17 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
-  Get the current TX and RX antenna port.
+  Return the current TX and RX antenna port.
   """
   def get_tx_rx_ports(pid) do
     GenServer.call(pid, [:get_antenna_port, 0x00])
+  end
+
+  @doc """
+  Return the antenna return loss of logical antenna ports.
+  """
+  def get_antenna_return_loss(pid) do
+    GenServer.call(pid, [:get_antenna_port, 0x06])
   end
 
   @doc """
