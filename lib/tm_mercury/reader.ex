@@ -208,6 +208,14 @@ defmodule TM.Mercury.Reader do
   end
 
   @doc """
+  Enumerate the logical antenna ports and report the antenna
+  detection status of each one.
+  """
+  def detect_antennas(pid) do
+    GenServer.call(pid, [:get_antenna_port, 0x05])
+  end
+
+  @doc """
   TODO
   """
   def get_reader_stats(pid, option, flags) do
