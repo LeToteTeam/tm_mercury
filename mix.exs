@@ -3,7 +3,7 @@ defmodule TM.Mercury.Mixfile do
 
   def project do
     [app: :tm_mercury,
-     version: "0.5.0",
+     version: "0.6.0-dev",
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
