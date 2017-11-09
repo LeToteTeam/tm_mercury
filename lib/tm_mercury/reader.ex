@@ -623,7 +623,7 @@ defmodule TM.Mercury.Reader do
   end
 
   defp execute_read_sync(ts, rdr, timeout, rp) do
-    flags = [:configured_list, :large_tag_population_support]
+    flags = [:configured_antenna, :large_tag_population_support]
             |> add_flag(:fast_search, rp)
 
     try do
