@@ -24,12 +24,10 @@ defmodule TM.Mercury.Message.Framing do
     len = byte_size(data) - 1
     packet = <<len :: uint8, data :: binary>>
     message = <<0xFF>> <> packet <> crc(packet)
-    Logger.debug "Outgoing: #{inspect message}"
     {:ok, message, state}
   end
 
   def remove_framing(data, %{buffer: buffer} = state) do
-    Logger.debug "Incoming: #{inspect data}"
     current_message = Map.get(state, :current_message)
     {buffer, current_message, messages} = process_data(buffer <> data, current_message, [])
     state = %{state | buffer: buffer, current_message: current_message}
