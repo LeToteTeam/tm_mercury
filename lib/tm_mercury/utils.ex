@@ -18,4 +18,7 @@ defmodule TM.Mercury.Utils do
     Enum.join x, " "
   end
 
+  def format_epc_as_string(tag) do
+    to_hex_string(tag[:epc]) |> String.replace(" ", "")
+  end
 end

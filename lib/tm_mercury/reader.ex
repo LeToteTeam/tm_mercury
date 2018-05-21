@@ -12,6 +12,7 @@ defmodule TM.Mercury.Reader do
   @def_read_timeout_ms    100
   @def_async_on_time_ms   100
   @def_async_off_time_ms  400
+  @def_rate_limit_per_tag :infinity
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
@@ -281,19 +282,20 @@ defmodule TM.Mercury.Reader do
 
   If a read plan is not provided, it will default to `SimpleReadPlan`.
   """
-  @spec read_async_start(pid, pid, pos_integer, pos_integer, read_plan) :: query_result | error
+  @spec read_async_start(pid, pid, pos_integer, pos_integer, read_plan, timeout) :: query_result | error
 
   def read_async_start(pid, listener,
                        on_time_ms \\ @def_async_on_time_ms,
                        off_time_ms \\ @def_async_off_time_ms,
-                       rp \\ @def_read_plan)
+                       rp \\ @def_read_plan,
+                       rate_limit \\ @def_rate_limit_per_tag)
 
-  def read_async_start(_pid, _listener, on_time_ms, off_time_ms, _rp) when on_time_ms <= 0 or off_time_ms <= 0 do
+  def read_async_start(_pid, _listener, on_time_ms, off_time_ms, _rp, _rl) when on_time_ms <= 0 or off_time_ms <= 0 do
     {:error, :bad_duty_cycle}
   end
 
-  def read_async_start(pid, listener, on_time_ms, off_time_ms, rp) do
-    GenServer.call(pid, [:read_async_start, {on_time_ms, off_time_ms}, rp, listener])
+  def read_async_start(pid, listener, on_time_ms, off_time_ms, rp, rl) do
+    GenServer.call(pid, [:read_async_start, {on_time_ms, off_time_ms}, rp, listener, rl])
   end
 
   @doc """
@@ -458,14 +460,14 @@ defmodule TM.Mercury.Reader do
     {:reply, reply, put_in(state, [:reader, :last_read_plan], rp)}
   end
 
-  def handle_call([:read_async_start, {on_time_ms, off_time_ms} = cycle, rp, listener], _from, state) do
+  def handle_call([:read_async_start, {on_time_ms, off_time_ms} = cycle, rp, listener, rate_limit_s], _from, state) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when not is_nil(pid) ->
         {:reply, {:error, {:already_started, pid}}, state}
       _ ->
         period = on_time_ms + off_time_ms
         Logger.info(fn -> "Starting async reads with #{trunc Float.round(on_time_ms / period, 2) * 100}% duty cycle" end)
-        {:ok, pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), cycle, rp, listener])
+        {:ok, pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), cycle, rp, listener, rate_limit_s])
         {:reply, :ok, %{state | async_pid: pid, async_period: period}}
     end
   end

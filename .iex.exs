@@ -22,11 +22,18 @@ defmodule Helpers do
   end
 
   def format_epc(tag) do
-    Utils.to_hex_string(tag[:epc]) |> String.replace(" ", "")
+    Utils.format_epc_as_string(tag)
   end
 
-  def start_async_test(device \\ "/dev/ttyACM0", on_time_ms \\ 100, off_time_ms \\ 400, power \\ 2000) do
+  def start_async_test(opts) do
     Logger.configure(level: :info)
+
+    device = Keyword.get(opts, :device, "/dev/ttyACM0")
+    on_time_ms = Keyword.get(opts, :on_time_ms, 100)
+    off_time_ms = Keyword.get(opts, :off_time_ms, 400)
+    power = Keyword.get(opts, :power, 2000)
+    rate_limit = Keyword.get(opts, :rate_limit, :infinity)
+    antennas = Keyword.get(opts, :antennas, {1,1})
 
     reader =
       case Reader.start_link(device) do
@@ -36,8 +43,10 @@ defmodule Helpers do
 
     :ok = Reader.set_read_tx_power(reader, power)
 
+    rp = %SimpleReadPlan{antennas: antennas}
+
     {:ok, listener} = Task.start_link(&print_tags_async/0)
-    Reader.read_async_start(reader, listener, on_time_ms, off_time_ms)
+    Reader.read_async_start(reader, listener, on_time_ms, off_time_ms, rp, rate_limit)
     reader
   end
 
