@@ -60,6 +60,16 @@ defmodule TM.Mercury.ReadAsyncTask do
     state
   end
 
+  defp handle_read_response({:error, :timeout}, state) do
+    Logger.warn("Suspending asynchronous reads due to timeout")
+    %{state | status: :suspended}
+  end
+
+  defp handle_read_response(other, state) do
+    Logger.warn("Unexpected response during async dispatch to read_sync: #{inspect other}")
+    state
+  end
+
   defp apply_rate_limit(tags, state) do
     now = System.monotonic_time(:seconds)
     rl = state.rate_limit
@@ -81,13 +91,4 @@ defmodule TM.Mercury.ReadAsyncTask do
     end)}}
   end
 
-  defp handle_read_response({:error, :timeout}, state) do
-    Logger.warn("Suspending asynchronous reads due to timeout")
-    %{state | status: :suspended}
-  end
-
-  defp handle_read_response(other, state) do
-    Logger.warn("Unexpected response during async dispatch to read_sync: #{inspect other}")
-    state
-  end
 end
