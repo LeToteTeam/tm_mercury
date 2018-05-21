@@ -1,21 +1,20 @@
 defmodule TM.Mercury.Utils do
-
   def to_hex_list(x) when is_list(x) do
-    Enum.map x, &( Base.encode16(<<&1>>))
+    Enum.map(x, &Base.encode16(<<&1>>))
   end
 
-  def to_hex_list(x) when is_binary(x)  do
+  def to_hex_list(x) when is_binary(x) do
     :erlang.binary_to_list(x)
-      |> to_hex_list
+    |> to_hex_list
   end
 
   def to_hex_string(x) when is_binary(x) do
     to_hex_list(x)
-      |> to_hex_string
+    |> to_hex_string
   end
 
   def to_hex_string(x) when is_list(x) do
-    Enum.join x, " "
+    Enum.join(x, " ")
   end
 
   def format_epc_as_string(tag) do

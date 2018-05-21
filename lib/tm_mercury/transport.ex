@@ -6,7 +6,7 @@ defmodule TM.Mercury.Transport do
   alias TM.Mercury.Message
 
   @defaults [
-    speed: 115200,
+    speed: 115_200,
     active: true,
     timeout: 5000,
     framing: {TM.Mercury.Message.Framing, []},
@@ -47,7 +47,7 @@ defmodule TM.Mercury.Transport do
 
   def init({device, owner, opts}) do
     opts = Keyword.merge(@defaults, opts)
-    {:ok, uart} = Nerves.UART.start_link
+    {:ok, uart} = Nerves.UART.start_link()
 
     s = %{
       device: device,
@@ -57,11 +57,12 @@ defmodule TM.Mercury.Transport do
       connection: :disconnected,
       callback: nil
     }
+
     {:connect, :init, s}
   end
 
   def connect(info, %{uart: uart, device: device, opts: opts} = s) do
-    Logger.info "Connecting to RFID reader at #{device}"
+    Logger.info("Connecting to RFID reader at #{device}")
 
     case info do
       {_, from} -> Connection.reply(from, :ok)
@@ -72,13 +73,14 @@ defmodule TM.Mercury.Transport do
       :ok ->
         send(s.owner, :connected)
         {:ok, %{s | connection: :connected}}
+
       {:error, _} ->
         {:backoff, 1000, s}
     end
   end
 
   def disconnect(info, %{uart: pid, device: device} = s) do
-    Logger.info "Disconnecting from RFID reader at #{device}"
+    Logger.info("Disconnecting from RFID reader at #{device}")
     _ = Nerves.UART.drain(pid)
     :ok = Nerves.UART.close(pid)
 
@@ -91,11 +93,13 @@ defmodule TM.Mercury.Transport do
         # Close and expect caller to re-open later
         Connection.reply(from, :ok)
         {:noconnect, s}
+
       {:error, :closed} ->
         Logger.error("RFID UART connection closed")
         {:connect, :reconnect, s}
+
       {:error, reason} ->
-        Logger.error("RFID UART error: #{inspect reason}")
+        Logger.error("RFID UART error: #{inspect(reason)}")
         {:connect, :reconnect, s}
     end
   end
@@ -105,7 +109,7 @@ defmodule TM.Mercury.Transport do
   end
 
   def handle_call({:set_speed, speed}, _, %{uart: pid, opts: opts} = s) do
-    :ok = Nerves.UART.configure pid, speed: speed
+    :ok = Nerves.UART.configure(pid, speed: speed)
     new_state = %{s | opts: Keyword.put(opts, :speed, speed)}
     {:reply, :ok, new_state}
   end
@@ -114,6 +118,7 @@ defmodule TM.Mercury.Transport do
     case Nerves.UART.write(pid, data) do
       :ok ->
         {:noreply, %{s | callback: from}}
+
       {:error, _} = error ->
         {:disconnect, error, error, s}
     end
@@ -132,6 +137,7 @@ defmodule TM.Mercury.Transport do
       {:reply, msg} ->
         GenServer.reply(s.callback, msg)
         {:noreply, s}
+
       {:disconnect, error} ->
         {:disconnect, error, s}
     end
@@ -146,7 +152,7 @@ defmodule TM.Mercury.Transport do
   end
 
   defp recv(%{status: 0} = msg) do
-      {:reply, {:ok, Message.decode(msg)}}
+    {:reply, {:ok, Message.decode(msg)}}
   end
 
   defp recv(%{status: status}) do
@@ -155,6 +161,7 @@ defmodule TM.Mercury.Transport do
         {:ok, reason} -> reason
         _ -> status
       end
+
     {:reply, {:error, reason}}
   end
 
@@ -165,5 +172,4 @@ defmodule TM.Mercury.Transport do
   defp recv({:error, _} = error) do
     {:disconnect, error}
   end
-
 end

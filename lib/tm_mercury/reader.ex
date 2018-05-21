@@ -8,24 +8,22 @@ defmodule TM.Mercury.Reader do
   alias TM.Mercury.{Transport, ReadAsyncTask, Protocol.Command}
   alias TM.Mercury.{SimpleReadPlan, StopTriggerReadPlan}
 
-  @def_read_plan          %SimpleReadPlan{}
-  @def_read_timeout_ms    100
-  @def_async_on_time_ms   100
-  @def_async_off_time_ms  400
+  @def_read_plan %SimpleReadPlan{}
+  @def_read_timeout_ms 100
+  @def_async_on_time_ms 100
+  @def_async_off_time_ms 400
   @def_rate_limit_per_tag :infinity
 
   @type command_result :: :ok
   @type query_result :: {:ok, term}
   @type error :: {:error, term}
   @type read_timeout :: pos_integer
-  @type read_plan :: SimpleReadPlan.t | StopTriggerReadPlan.t
+  @type read_plan :: SimpleReadPlan.t() | StopTriggerReadPlan.t()
 
-  defstruct [
-    model: nil,
-    power_mode: :full,
-    region: :na,
-    last_read_plan: nil
-  ]
+  defstruct model: nil,
+            power_mode: :full,
+            region: :na,
+            last_read_plan: nil
 
   # Client API
 
@@ -282,15 +280,20 @@ defmodule TM.Mercury.Reader do
 
   If a read plan is not provided, it will default to `SimpleReadPlan`.
   """
-  @spec read_async_start(pid, pid, pos_integer, pos_integer, read_plan, timeout) :: query_result | error
+  @spec read_async_start(pid, pid, pos_integer, pos_integer, read_plan, timeout) ::
+          query_result | error
 
-  def read_async_start(pid, listener,
-                       on_time_ms \\ @def_async_on_time_ms,
-                       off_time_ms \\ @def_async_off_time_ms,
-                       rp \\ @def_read_plan,
-                       rate_limit \\ @def_rate_limit_per_tag)
+  def read_async_start(
+        pid,
+        listener,
+        on_time_ms \\ @def_async_on_time_ms,
+        off_time_ms \\ @def_async_off_time_ms,
+        rp \\ @def_read_plan,
+        rate_limit \\ @def_rate_limit_per_tag
+      )
 
-  def read_async_start(_pid, _listener, on_time_ms, off_time_ms, _rp, _rl) when on_time_ms <= 0 or off_time_ms <= 0 do
+  def read_async_start(_pid, _listener, on_time_ms, off_time_ms, _rp, _rl)
+      when on_time_ms <= 0 or off_time_ms <= 0 do
     {:error, :bad_duty_cycle}
   end
 
@@ -351,14 +354,14 @@ defmodule TM.Mercury.Reader do
       * `:max_save`
       * `:sleep`
   """
-  @spec start_link(String.t, keyword) :: {:ok, pid} | error
+  @spec start_link(String.t(), keyword) :: {:ok, pid} | error
   def start_link(device, opts \\ []) do
-    name = Path.basename(device) |> String.to_atom
+    name = Path.basename(device) |> String.to_atom()
     GenServer.start_link(__MODULE__, {device, opts}, name: name)
   end
 
   def init({device, opts}) do
-    Logger.debug "Starting RFID reader process for #{device} with pid #{inspect self()}"
+    Logger.debug("Starting RFID reader process for #{device} with pid #{inspect(self())}")
 
     # Pass this subset of options along to the transport process
     ts_opts = Keyword.take(opts, [:speed, :timeout, :framing])
@@ -378,8 +381,9 @@ defmodule TM.Mercury.Reader do
           |> Map.put(:async_period, @def_async_on_time_ms + @def_async_off_time_ms)
 
         {:ok, state}
+
       error ->
-        Logger.warn "Failed to open connection to RFID device at #{device}: #{inspect error}"
+        Logger.warn("Failed to open connection to RFID device at #{device}: #{inspect(error)}")
         error
     end
   end
@@ -388,17 +392,19 @@ defmodule TM.Mercury.Reader do
 
   def handle_info(:connected, state) do
     Logger.info("Reader connected")
+
     case initialize_reader(state) do
       {:ok, rdr} ->
         send_to_async_task(:resume, state)
         {:noreply, %{state | status: :connected, reader: rdr}}
+
       _ ->
         {:noreply, state}
     end
   end
 
   def handle_info(:disconnected, state) do
-    Logger.warn "Reader disconnected"
+    Logger.warn("Reader disconnected")
     send_to_async_task(:suspend, state)
     {:noreply, %{state | status: :disconnected}}
   end
@@ -416,8 +422,8 @@ defmodule TM.Mercury.Reader do
 
   def handle_call(:reboot, _from, state) do
     with :ok <- reboot_reader(state),
-                new_state = Map.put(state, :status, :disconnected),
-      do: {:reply, :ok, new_state}
+         new_state = Map.put(state, :status, :disconnected),
+         do: {:reply, :ok, new_state}
   end
 
   def handle_call(:reconnect, _from, %{transport: ts} = state) do
@@ -431,13 +437,13 @@ defmodule TM.Mercury.Reader do
     {:reply, resp, s}
   end
 
-  def handle_call([:set_region|[region]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+  def handle_call([:set_region | [region]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
     exec_command_bind_reader_state(ts, rdr, cmd, s, fn r ->
       %{r | region: region}
     end)
   end
 
-  def handle_call([:set_power_mode|[mode]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
+  def handle_call([:set_power_mode | [mode]] = cmd, _from, %{transport: ts, reader: rdr} = s) do
     # Handle set_power_mode separately so we can track the state change.
     exec_command_bind_reader_state(ts, rdr, cmd, s, fn r ->
       %{r | power_mode: mode}
@@ -452,22 +458,34 @@ defmodule TM.Mercury.Reader do
       else
         {:error, :no_tags_found} ->
           {:ok, []}
+
         {:error, _} = error ->
-          Logger.error "Error while executing read_sync: #{inspect error}"
+          Logger.error("Error while executing read_sync: #{inspect(error)}")
           error
       end
 
     {:reply, reply, put_in(state, [:reader, :last_read_plan], rp)}
   end
 
-  def handle_call([:read_async_start, {on_time_ms, off_time_ms} = cycle, rp, listener, rate_limit_s], _from, state) do
+  def handle_call(
+        [:read_async_start, {on_time_ms, off_time_ms} = cycle, rp, listener, rate_limit_s],
+        _from,
+        state
+      ) do
     case Map.fetch(state, :async_pid) do
       {:ok, pid} when not is_nil(pid) ->
         {:reply, {:error, {:already_started, pid}}, state}
+
       _ ->
         period = on_time_ms + off_time_ms
-        Logger.info(fn -> "Starting async reads with #{trunc Float.round(on_time_ms / period, 2) * 100}% duty cycle" end)
-        {:ok, pid} = Task.start_link(ReadAsyncTask, :start_link, [self(), cycle, rp, listener, rate_limit_s])
+
+        Logger.info(fn ->
+          "Starting async reads with #{trunc(Float.round(on_time_ms / period, 2) * 100)}% duty cycle"
+        end)
+
+        {:ok, pid} =
+          Task.start_link(ReadAsyncTask, :start_link, [self(), cycle, rp, listener, rate_limit_s])
+
         {:reply, :ok, %{state | async_pid: pid, async_period: period}}
     end
   end
@@ -481,6 +499,7 @@ defmodule TM.Mercury.Reader do
         stop_task =
           Task.async(fn ->
             send(pid, {:stop, self()})
+
             receive do
               reply -> reply
             end
@@ -489,14 +508,17 @@ defmodule TM.Mercury.Reader do
         stop_result =
           case Task.yield(stop_task, stop_timeout) || Task.shutdown(stop_task) do
             nil ->
-              Logger.warn "Failed to stop read async process in #{stop_timeout}ms"
+              Logger.warn("Failed to stop read async process in #{stop_timeout}ms")
               Process.unlink(pid)
               Process.exit(pid, :kill)
               {:ok, :killed}
+
             other ->
               other
           end
+
         {:reply, stop_result, %{state | async_pid: nil}}
+
       _ ->
         {:reply, {:error, :not_started}, state}
     end
@@ -513,6 +535,7 @@ defmodule TM.Mercury.Reader do
     resp = execute(ts, rdr, cmd)
     {:reply, resp, s}
   end
+
   def handle_call(cmd, _from, %{transport: ts, reader: rdr} = s) when is_atom(cmd) do
     resp = execute(ts, rdr, [cmd])
     {:reply, resp, s}
@@ -536,7 +559,7 @@ defmodule TM.Mercury.Reader do
          :ok <- execute(ts, reader, [:set_reader_optional_params, :rssi_in_dbm, true]),
          :ok <- execute(ts, reader, [:set_region, reader.region]),
          :ok <- execute(ts, reader, [:set_power_mode, reader.power_mode]),
-      do: {:ok, reader}
+         do: {:ok, reader}
   end
 
   defp reboot_reader(%{transport: ts, reader: rdr, speed: speed}) do
@@ -551,14 +574,14 @@ defmodule TM.Mercury.Reader do
          {:ok, _version} <- execute(ts, rdr, :boot_firmware),
          {:ok, :application} <- execute(ts, rdr, :get_current_program),
          :ok <- change_baud_rate(ts, rdr, speed),
-      do: :ok
+         do: :ok
   end
 
   defp change_baud_rate(ts, reader, rate) do
     # Change the baud rate on both the reader and the host.
     with :ok <- execute(ts, reader, [:set_baud_rate, rate]),
          :ok <- Transport.set_speed(ts, rate),
-      do: :ok
+         do: :ok
   end
 
   defp boot_bootloader(ts, reader) do
@@ -567,6 +590,7 @@ defmodule TM.Mercury.Reader do
         # Give the reader time to gather its wits
         Process.sleep(200)
         :ok
+
       {:error, :invalid_opcode} ->
         # Already in bootloader, ignore
         :ok
@@ -578,16 +602,22 @@ defmodule TM.Mercury.Reader do
     with :ok <- prepare_tag_protocol(ts, rdr, rp, rdr.last_read_plan),
          :ok <- prepare_antenna_port(ts, rdr, rp, rdr.last_read_plan),
          :ok <- execute(ts, rdr, :clear_tag_id_buffer),
-      do: :ok
+         do: :ok
   end
 
   defp prepare_antenna_port(ts, rdr, rp, nil) do
     {:ok, antennas} = execute(ts, rdr, :get_antenna_port)
+
     if rp.antennas != antennas do
-      Logger.debug "Configure reader to use antennas #{inspect rp.antennas}"
+      Logger.debug("Configure reader to use antennas #{inspect(rp.antennas)}")
       execute(ts, rdr, [:set_antenna_port, rp.antennas])
     else
-      Logger.debug "Last read plan not available and the reader is already configured for antennas #{inspect rp.antennas}"
+      Logger.debug(
+        "Last read plan not available and the reader is already configured for antennas #{
+          inspect(rp.antennas)
+        }"
+      )
+
       :ok
     end
   end
@@ -597,18 +627,24 @@ defmodule TM.Mercury.Reader do
   end
 
   defp prepare_antenna_port(ts, rdr, %{antennas: rp_ants}, %{antennas: _last_rp_ants}) do
-    Logger.debug "Configuring reader to use antennas #{inspect rp_ants}"
+    Logger.debug("Configuring reader to use antennas #{inspect(rp_ants)}")
     execute(ts, rdr, [:set_antenna_port, rp_ants])
   end
 
   defp prepare_tag_protocol(ts, rdr, rp, nil) do
     # Get the reader's currently configured tag protocol
     {:ok, rdr_proto} = execute(ts, rdr, :get_tag_protocol)
+
     if rp.protocol != rdr_proto do
-      Logger.debug "Configuring reader to use protocol #{rp.protocol}"
+      Logger.debug("Configuring reader to use protocol #{rp.protocol}")
       execute(ts, rdr, [:set_tag_protocol, rp.protocol])
     else
-      Logger.debug "Last read plan not available and the reader is already configured for protocol #{rp.protocol}"
+      Logger.debug(
+        "Last read plan not available and the reader is already configured for protocol #{
+          rp.protocol
+        }"
+      )
+
       :ok
     end
   end
@@ -620,18 +656,19 @@ defmodule TM.Mercury.Reader do
 
   defp prepare_tag_protocol(ts, rdr, %{protocol: rp_proto}, %{protocol: _last_rp_proto}) do
     # Protocol in last read plan is different, configure reader for new proto.
-    Logger.debug "Configuring reader to use protocol #{rp_proto}"
+    Logger.debug("Configuring reader to use protocol #{rp_proto}")
     execute(ts, rdr, [:set_tag_protocol, rp_proto])
   end
 
   defp execute_read_sync(ts, rdr, timeout, rp) do
-    flags = [:configured_antenna, :large_tag_population_support]
-            |> add_flag(:fast_search, rp)
+    flags =
+      [:configured_antenna, :large_tag_population_support]
+      |> add_flag(:fast_search, rp)
 
     try do
-      with {:ok, cmd}    <- build_command_for_plan(rdr, flags, timeout, rp),
+      with {:ok, cmd} <- build_command_for_plan(rdr, flags, timeout, rp),
            {:ok, _count} <- Transport.send_data(ts, cmd) do
-        flags = TM.Mercury.Tag.MetadataFlag.all
+        flags = TM.Mercury.Tag.MetadataFlag.all()
         execute(ts, rdr, [:get_tag_id_buffer, flags])
       end
     catch
@@ -642,8 +679,9 @@ defmodule TM.Mercury.Reader do
   end
 
   defp add_flag(flags, :fast_search, %{fast_search: true}) do
-   [:read_multiple_fast_search|flags]
+    [:read_multiple_fast_search | flags]
   end
+
   defp add_flag(flags, _, _), do: flags
 
   defp build_command_for_plan(rdr, flags, timeout, %SimpleReadPlan{}) do
@@ -662,22 +700,20 @@ defmodule TM.Mercury.Reader do
       :ok ->
         new_reader = reader_state_func.(rdr)
         {:reply, :ok, %{state | reader: new_reader}}
+
       error ->
         {:reply, error, state}
     end
   end
 
-  defp execute(ts, %__MODULE__{} = rdr, cmd) when is_atom(cmd),
-    do: execute(ts, rdr, [cmd])
+  defp execute(ts, %__MODULE__{} = rdr, cmd) when is_atom(cmd), do: execute(ts, rdr, [cmd])
 
   defp execute(ts, %__MODULE__{} = rdr, cmd) when is_list(cmd) do
     Command.build(rdr, cmd)
     |> send_command(ts)
   end
 
-  defp send_command({:error, _reason} = error, _ts),
-    do: error
+  defp send_command({:error, _reason} = error, _ts), do: error
 
-  defp send_command({:ok, cmd}, ts),
-    do: Transport.send_data(ts, cmd)
+  defp send_command({:ok, cmd}, ts), do: Transport.send_data(ts, cmd)
 end

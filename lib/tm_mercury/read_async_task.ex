@@ -5,14 +5,16 @@ defmodule TM.Mercury.ReadAsyncTask do
   alias TM.Mercury.Utils
 
   def start_link(reader, {on_ms, off_ms}, read_plan, listener, rate_limit) do
-    loop(%{status: :running,
-           reader: reader,
-           on: on_ms,
-           off: off_ms,
-           read_plan: read_plan,
-           listener: listener,
-           rate_limit: rate_limit,
-           limited_tags: %{}})
+    loop(%{
+      status: :running,
+      reader: reader,
+      on: on_ms,
+      off: off_ms,
+      read_plan: read_plan,
+      listener: listener,
+      rate_limit: rate_limit,
+      limited_tags: %{}
+    })
   end
 
   defp loop(state) do
@@ -20,12 +22,14 @@ defmodule TM.Mercury.ReadAsyncTask do
       {:stop, from} ->
         send(from, :stopped)
         {:shutdown, :stopped}
+
       :suspend ->
         loop(%{state | status: :suspended})
+
       :resume ->
         loop(%{state | status: :running})
-      after
-        state.off -> loop(dispatch(state))
+    after
+      state.off -> loop(dispatch(state))
     end
   end
 
@@ -35,7 +39,7 @@ defmodule TM.Mercury.ReadAsyncTask do
       |> handle_read_response(state)
     catch
       :exit, reason ->
-        Logger.warn("Suspending asynchronous reads due to exit reason: #{inspect reason}")
+        Logger.warn("Suspending asynchronous reads due to exit reason: #{inspect(reason)}")
         %{state | status: :suspended}
     end
   end
@@ -48,12 +52,14 @@ defmodule TM.Mercury.ReadAsyncTask do
   end
 
   defp handle_read_response({:ok, tags}, state) do
-    {tags, state} = cond do
-      is_number(state.rate_limit) && state.rate_limit > 0 ->
-        apply_rate_limit(tags, state)
-      true ->
-        {tags, state}
-    end
+    {tags, state} =
+      cond do
+        is_number(state.rate_limit) && state.rate_limit > 0 ->
+          apply_rate_limit(tags, state)
+
+        true ->
+          {tags, state}
+      end
 
     send(state.listener, {:tm_mercury, :tags, tags})
     :ok = Reader.clear_tag_id_buffer(state.reader)
@@ -66,7 +72,7 @@ defmodule TM.Mercury.ReadAsyncTask do
   end
 
   defp handle_read_response(other, state) do
-    Logger.warn("Unexpected response during async dispatch to read_sync: #{inspect other}")
+    Logger.warn("Unexpected response during async dispatch to read_sync: #{inspect(other)}")
     state
   end
 
@@ -75,20 +81,27 @@ defmodule TM.Mercury.ReadAsyncTask do
     rl = state.rate_limit
 
     # Clear out any tags we've seen that are older than the rl seconds.
-    limited_tags = Enum.filter(state.limited_tags, fn {_id, ts} ->
-      age = now - ts
-      age < rl
-    end) |> Map.new()
+    limited_tags =
+      Enum.filter(state.limited_tags, fn {_id, ts} ->
+        age = now - ts
+        age < rl
+      end)
+      |> Map.new()
 
     # Filter incoming tags so we send only those that we haven't seen in more than rl seconds.
-    tags_out = Enum.reject(tags, fn tag ->
-      epc = Utils.format_epc_as_string(tag)
-      Map.has_key?(limited_tags, epc)
-    end)
+    tags_out =
+      Enum.reject(tags, fn tag ->
+        epc = Utils.format_epc_as_string(tag)
+        Map.has_key?(limited_tags, epc)
+      end)
 
-    {tags_out, %{state | limited_tags: Enum.into(tags_out, limited_tags, fn tag ->
-      {Utils.format_epc_as_string(tag), now}
-    end)}}
+    {tags_out,
+     %{
+       state
+       | limited_tags:
+           Enum.into(tags_out, limited_tags, fn tag ->
+             {Utils.format_epc_as_string(tag), now}
+           end)
+     }}
   end
-
 end
