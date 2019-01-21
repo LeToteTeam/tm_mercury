@@ -4,18 +4,18 @@ defmodule TM.Mercury.ReaderTest do
   alias TM.Mercury.{Reader, SimpleReadPlan, StopTriggerReadPlan}
 
   setup_all do
-    {:ok, pid} = Reader.start_link("/dev/ttyACM0", speed: 115200)
+    {:ok, pid} = Reader.start_link("/dev/ttyACM0", speed: 115_200)
     {:ok, %{pid: pid}}
   end
 
   test "Reader returns a tag synchronously using current reader settings", context do
-    {:ok, [tag|_]} = Reader.read_sync(context.pid)
+    {:ok, [tag | _]} = Reader.read_sync(context.pid)
     assert tag[:protocol] == :gen2
   end
 
   test "Reader returns a tag synchronously using a simple read plan", context do
     rp = %SimpleReadPlan{antennas: 1, protocol: :gen2}
-    {:ok, [tag|_]} = Reader.read_sync(context.pid, 100, rp)
+    {:ok, [tag | _]} = Reader.read_sync(context.pid, 100, rp)
     assert tag[:protocol] == rp.protocol
   end
 
@@ -25,7 +25,8 @@ defmodule TM.Mercury.ReaderTest do
     Reader.read_async_stop(context.pid)
   end
 
-  test "Reader returns a single tag read for a stop trigger read plan with tag count = 1", context do
+  test "Reader returns a single tag read for a stop trigger read plan with tag count = 1",
+       context do
     rp = %StopTriggerReadPlan{stop_on_tag_count: 1, antennas: 1, protocol: :gen2}
     assert {:error, :not_implemented} = Reader.read_sync(context.pid, 100, rp)
   end
@@ -39,10 +40,12 @@ defmodule TM.Mercury.ReaderTest do
     {:ok, initial_cdbm} = Reader.get_read_tx_power(context.pid)
 
     max_power_cdbm = 3000
-    change_to_cdbm = case initial_cdbm do
-      ^max_power_cdbm -> 2000
-      _ -> min(initial_cdbm + 100, max_power_cdbm)
-    end
+
+    change_to_cdbm =
+      case initial_cdbm do
+        ^max_power_cdbm -> 2000
+        _ -> min(initial_cdbm + 100, max_power_cdbm)
+      end
 
     :ok = Reader.set_read_tx_power(context.pid, change_to_cdbm)
     {:ok, changed_cdbm} = Reader.get_read_tx_power(context.pid)
@@ -54,7 +57,7 @@ defmodule TM.Mercury.ReaderTest do
   end
 
   test "RSSI should be a negative number (dbm)", context do
-    {:ok, [tag|_]} = Reader.read_sync(context.pid)
+    {:ok, [tag | _]} = Reader.read_sync(context.pid)
     assert tag[:rssi] < 0
   end
 end
