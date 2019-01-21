@@ -4,7 +4,7 @@ defmodule TM.Mercury.Message.Framing do
   alias TM.Mercury.Message
   import TM.Mercury.Utils.Binary
 
-  @behaviour Nerves.UART.Framing
+  @behaviour Circuits.UART.Framing
 
   @crctable [
     0x0000,

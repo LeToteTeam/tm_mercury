@@ -4,6 +4,7 @@ defmodule TM.Mercury.Transport do
   use Connection
 
   alias TM.Mercury.Message
+  alias Circuits.UART
 
   @defaults [
     speed: 115_200,
@@ -23,7 +24,7 @@ defmodule TM.Mercury.Transport do
 
   @doc """
   Change the baud rate on the underlying UART connection.
-  Note: this might not be supported by Nerves.UART yet, but it still accepts the call.
+  Note: this might not be supported by Circuits.UART yet, but it still accepts the call.
   """
   def set_speed(conn, speed) do
     Connection.call(conn, {:set_speed, speed})
@@ -47,7 +48,7 @@ defmodule TM.Mercury.Transport do
 
   def init({device, owner, opts}) do
     opts = Keyword.merge(@defaults, opts)
-    {:ok, uart} = Nerves.UART.start_link()
+    {:ok, uart} = UART.start_link()
 
     s = %{
       device: device,
@@ -69,7 +70,7 @@ defmodule TM.Mercury.Transport do
       _ -> :noop
     end
 
-    case Nerves.UART.open(uart, device, opts) do
+    case UART.open(uart, device, opts) do
       :ok ->
         send(s.owner, :connected)
         {:ok, %{s | connection: :connected}}
@@ -81,8 +82,8 @@ defmodule TM.Mercury.Transport do
 
   def disconnect(info, %{uart: pid, device: device} = s) do
     Logger.info("Disconnecting from RFID reader at #{device}")
-    _ = Nerves.UART.drain(pid)
-    :ok = Nerves.UART.close(pid)
+    _ = UART.drain(pid)
+    :ok = UART.close(pid)
 
     s = %{s | connection: :disconnected}
 
@@ -109,13 +110,13 @@ defmodule TM.Mercury.Transport do
   end
 
   def handle_call({:set_speed, speed}, _, %{uart: pid, opts: opts} = s) do
-    :ok = Nerves.UART.configure(pid, speed: speed)
+    :ok = UART.configure(pid, speed: speed)
     new_state = %{s | opts: Keyword.put(opts, :speed, speed)}
     {:reply, :ok, new_state}
   end
 
   def handle_call({:send, data}, from, %{uart: pid} = s) do
-    case Nerves.UART.write(pid, data) do
+    case UART.write(pid, data) do
       :ok ->
         {:noreply, %{s | callback: from}}
 
@@ -132,7 +133,7 @@ defmodule TM.Mercury.Transport do
     {:disconnect, {:close, from}, s}
   end
 
-  def handle_info({:nerves_uart, _, data}, %{connection: :connected} = s) do
+  def handle_info({:circuits_uart, _, data}, %{connection: :connected} = s) do
     case recv(data) do
       {:reply, msg} ->
         GenServer.reply(s.callback, msg)

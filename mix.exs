@@ -18,7 +18,7 @@ defmodule TM.Mercury.Mixfile do
 
   defp deps do
     [{:connection, "~> 1.0.0"},
-     {:nerves_uart, "~> 0.1"},
+     {:circuits_uart, "~> 1.3"},
      {:dialyxir, "~> 0.5", only: [:dev], runtime: false},
      {:ex_doc, "~> 0.16.4", only: :dev, runtime: false}]
   end
