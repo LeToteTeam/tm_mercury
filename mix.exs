@@ -30,7 +30,6 @@ defmodule TM.Mercury.Mixfile do
   end
 
   defp package do
-    [maintainers: ["Justin Schneck", "Jeff Smith"],
      licenses: ["Apache 2.0"],
      links: %{"Github" => "https://github.com/letoteteam/tm_mercury"}]
   end
